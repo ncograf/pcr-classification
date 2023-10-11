@@ -22,6 +22,16 @@ LABELS_LIST = ["IAV-M_POS",
 
 
 def load_dataset(labels : List[str] = None, datasets : List[str] = None, datafolder : str = "Data") -> pd.DataFrame:
+    """Loads data into a pandas DataFrame
+
+    Args:
+        labels (List[str], optional): Labels to be included in the output available labels are accessable in data_lib.LABELS_LIST. Defaults to None.
+        datasets (List[str], optional): Dataset shortcuts of the desired datasets which will be merged into the output (List of available set can be generated with data_lib.explore_datasets(root, verbose=True)). Defaults to None.
+        datafolder (str, optional): Root folder where datasets will be found. Defaults to "Data".
+
+    Returns:
+        pd.DataFrame: Contains dataset with six columns containing features and one column for each added label. The datasets are concatenated along rows.
+    """
     # get available sets
     available_datasets = explore_datasets(datafolder) 
     
@@ -65,6 +75,16 @@ def load_dataset(labels : List[str] = None, datasets : List[str] = None, datafol
     return load_custom_dataset(dataset_list, label_list)
     
 def explore_datasets(datafolder : str = "Data", verbose=False) -> Dict[str, List[str]]:
+    """Searches for files with "labelled" datacontent
+
+    Args:
+        datafolder (str, optional): root, where the search should start. Defaults to "Data".
+        verbose (bool, optional): If True, summary of found folder will be printed. Defaults to False.
+
+    Returns:
+        Dict[str, List[str]]: Dictinary containing found data files, the files are gouped in lists and stored
+        under the short name which is computed from the original file name
+    """
     
     # generate pattern 
     # must have
@@ -116,14 +136,24 @@ def explore_datasets(datafolder : str = "Data", verbose=False) -> Dict[str, List
         for key in data_groups:
             print("-----------------------------------")
             print(f"Group: {data_groups[key]['path']}")
+            
+            # list for printing
+            group_elems = []
             for set_key in data_groups[key]:
                 if set_key != 'path':
-                    print(f"{set_key}, files: {data_groups[key][set_key]}, sample path: {data_dict[set_key][0]}")
+                    #print(f"{set_key}, files: {data_groups[key][set_key]}, sample path: {data_dict[set_key][0]}")
+                    group_elems.append(f"{set_key}, files: {data_groups[key][set_key]}")
+            
+            # print
+            for a,b,c in zip(group_elems[::3], group_elems[1::3], group_elems[2::3]):
+                print(f"{a:<40}{b:<40}{c}")
         print("-----------------------------------")
 
     # Then group files with the same `.*_S-.*_.._` pattern
     # extract their paths and store it in a map with
     return data_dict
+
+explore_datasets(verbose=True)
     
 # get data to work with
 def load_custom_dataset(files: List[List[str]], labels: List[str] ) -> pd.DataFrame:
