@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Dict, List
 import re
 import pathlib
+import itertools
 import os
 
 LABELS_LIST = ["IAV-M_POS",
@@ -142,7 +143,7 @@ def explore_datasets(datafolder : str = "../Data", verbose=False) -> Dict[str, L
                     group_elems.append(f"{set_key}, files: {data_groups[key][set_key]}")
             
             # print
-            for a,b,c in zip(group_elems[::3], group_elems[1::3], group_elems[2::3]):
+            for a,b,c in itertools.zip_longest(group_elems[::3], group_elems[1::3], group_elems[2::3], fillvalue=""):
                 print(f"{a:<40}{b:<40}{c}")
         print("-----------------------------------")
 
