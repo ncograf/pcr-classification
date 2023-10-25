@@ -7,12 +7,42 @@ import transform_lib
 from icecream import ic
 
 class NegativeClusterBasedClassifier(BaseEstimator):
+    """Classifier, for the list of classes based on
+    thresholds in transformed axis and clusterwise classifications
+    
+    Frist the classifier takes a negative control sample in the initialization
+    The method fit
+    
+
+    Args:
+        BaseEstimator : sklearn compatibility
+    """
     
     def __init__(self, negative_cluster : npt.ArrayLike,
                  cluster_algorithm : ClusterMixin,
                  aggressiveness : npt.ArrayLike | float = 10,
                  whitening_transformer : TransformerMixin = transform_lib.WhitenTransformer(transform_lib.Whitenings.ZCA_COR),
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']):
+        """Initialize classifier with important parameters
+        
+        The negative control is only use for determeining the thresholds of the labels / axes.
+        These thesholds are also influenced by the whitening transformer and the aggressiveness.
+        
+        The cluster algorithm is used to determine clusters. All the points in one cluster will be labelled positive or
+        negative depending on it's center. 
+
+        The prediction axis variable makes sure the right desieses get determined by the right axes.
+        
+        Args:
+            negative_cluster (npt.ArrayLike): Sample points used as negative cluster for threshold reference
+            cluster_algorithm (ClusterMixin): Clustering algorithm to be used for builing the clusters
+            aggressiveness (npt.ArrayLike | float, optional): Threshhold points per axis/label based in units of
+                standard deviations of the zero cluster in this dimension. Defaults to 10.
+            whitening_transformer (TransformerMixin, optional): Whiteining transformer to be used
+                in order to eliminate correlation. Defaults to transform_lib.WhitenTransformer(transform_lib.Whitenings.ZCA_COR).
+            prediction_axis (List[str], optional): Assigns labels to the prediction axis. 
+                Defaults to ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'].
+        """
         
         # store local variables
         self.aggressivness = aggressiveness
@@ -28,6 +58,23 @@ class NegativeClusterBasedClassifier(BaseEstimator):
         self.cluster_labels = None
         
     def fit(self, X : npt.ArrayLike, y : npt.ArrayLike = None):
+        """Determine thresholds based on the input X
+        
+        The covariance for the Covariance elimination is taken from the sample
+        X. This will usually be the same X as used for the prediction, but it
+        may also differ.
+        
+        For example this X can contain all the samples, while
+        the input to the predict function is limited in the size of X due to the
+        clustering algorithm as bottlneck.
+
+        Args:
+            X (npt.ArrayLike): Sample used to compute covariance for whitening.
+            y (npt.ArrayLike, optional): Ignored. Defaults to None.
+
+        Returns:
+            self
+        """
         
         # create transformed inputs
         self.X_fit = X
@@ -43,7 +90,25 @@ class NegativeClusterBasedClassifier(BaseEstimator):
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None,
                 cluster_on_transformed : bool = False,
-                max_cluster_sample = 5000) -> pd.DataFrame:
+                ) -> pd.DataFrame:
+        """Assigns a list of true / false indicators for each input in X
+        
+        This method is limited in the sense that the clustering algorithm might collaps 
+        for too large inputs in X.
+        
+        The labels are determied based on the thresholds computed in fit (which has to be called
+        before calling this). Moreover all points in the same cluster get the same labels, 
+        according to the clusters mean.
+
+        Args:
+            X (npt.ArrayLike): Samples to be classified
+            y (npt.ArrayLike, optional): Ignored. Defaults to None.
+            cluster_on_transformed (bool, optional): Indicater if the clustering should be done
+                on the whitened X (if true) or on the original input X. Defaults to False.
+
+        Returns:
+            pd.DataFrame: Indicators for each label
+        """
         
         # transform input
         self.X = X
@@ -55,24 +120,8 @@ class NegativeClusterBasedClassifier(BaseEstimator):
         else:
             X_to_cluster = X
         
-        # compute random permutation
-        X_rows = X.shape[0]
-        shuffle = np.random.permutation(X_rows)
-        shuffle_back = np.arange(X_rows)
-        shuffle_back[shuffle] = np.arange(X_rows)
-        X_to_cluster = X_to_cluster[shuffle,:]
-            
-        # clustering does not scale well, so we need to handle this
-        num_samples = X.shape[0]
-        num_cluster_samples = num_samples // max_cluster_sample + 1
-        X_to_cluster_split = np.array_split(X_to_cluster, num_cluster_samples, axis=0)
-        cluster_label_split = []
-        for sample in X_to_cluster_split:
-            cluster_label_split.append(self.cluster_algorithm.fit_predict(sample))
-        
-        # permute back
-        self.cluster_labels = np.concatenate(cluster_label_split, axis=0)
-        self.cluster_labels = self.cluster_labels[shuffle_back]
+        # clustering does not scale well TODO
+        self.cluster_labels = self.cluster_algorithm.fit_predict(X_to_cluster)
 
         # make predictions
         predictions = get_cluster_based_classification(self.X_transformed, self.cluster_labels, self.axis_threshholds)
@@ -83,6 +132,11 @@ class NegativeClusterBasedClassifier(BaseEstimator):
         return self.predictions_df
     
     def validate_labels(self, true_labels : npt.ArrayLike):
+        """Print some statistics such as false negatives / positives
+
+        Args:
+            true_labels (npt.ArrayLike): Ground truth to determine statistics
+        """
         
         np_true_labels = np.array(true_labels)
         np_predicted_labels = np.array(self.predictions_df)
@@ -100,14 +154,12 @@ class NegativeClusterBasedClassifier(BaseEstimator):
 
         # false negatives
         false_negatives = error_matrix == -1
-        true_negatives = 1 - false_negatives
         false_neg_rate = np.mean(false_negatives)
         false_neg_rate_class = np.mean(false_negatives, axis=0).reshape(1,-1)
         df_false_neg_rate_class = pd.DataFrame(data=false_neg_rate_class, columns=self.predictions_df.columns)
         
         # false positives
         false_positives = error_matrix == 1
-        true_positives = 1 - false_positives
         false_pos_rate = np.mean(false_positives)
         false_pos_rate_class = np.mean(false_positives, axis=0).reshape(1,-1)
         df_false_pos_rate_class = pd.DataFrame(data=false_pos_rate_class, columns=self.predictions_df.columns)
@@ -129,6 +181,8 @@ def get_neg_based_per_axis_criterion(negative_cluster_transformed : npt.ArrayLik
 
     Threshholds are computed as the mean of the control cluster plus
     aggressiveness times the standard deviation along the corresponding axis.
+    
+    This is an auxiliary function
 
     Args:
         negative_cluster (nump array_like): negative control cluster or automatically determinded
@@ -160,6 +214,8 @@ def get_cluster_based_classification(samples_transformed : npt.ArrayLike,
 
     All data is assumed to be in transformed coordinates, i.e. we
     assume the classification can be done simply per axis.
+
+    This is an auxiliary function
 
     Args:
         samples_transformed (array_like): samples to classify
