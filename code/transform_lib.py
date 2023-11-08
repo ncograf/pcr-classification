@@ -1,7 +1,9 @@
 import numpy as np
+import numpy.typing as npt
 from enum import Enum
 from sklearn.base import BaseEstimator, TransformerMixin
 from typing import overload, Tuple
+
 
 # possible classes for data whitening
 class Whitenings(Enum):
@@ -37,6 +39,13 @@ class WhitenTransformer(BaseEstimator, TransformerMixin):
         Returns:
             WhitenTransformer: the transformer filled with W and X_mean
         """
+        
+        # First apply min-max scaling
+        self.X_min = np.min(X, axis=0)
+        self.X_max = np.max(X, axis=0)
+        
+        X = self.min_max_scale(X)
+
         # numerical stability
         eps = 1e-8
         
@@ -80,6 +89,18 @@ class WhitenTransformer(BaseEstimator, TransformerMixin):
         self.W = W
         return self
     
+    def min_max_scale(self, X : npt.ArrayLike) -> npt.ArrayLike:
+        """Min-Max transformer
+
+        Args:
+            X (npt.ArrayLike): Data to be transformed
+
+        Returns:
+            npt.ArrayLike: Transformed matrix
+        """
+        X_trans = (X - self.X_min) / (self.X_max - self.X_min)
+        return X_trans
+    
     def transform(self, X : np.array, y : np.array = None) -> np.array:
         """Whiten matrix X given the whitening method
         
@@ -96,4 +117,6 @@ class WhitenTransformer(BaseEstimator, TransformerMixin):
             raise Exception('No mean is found. Try to fit before transform.')
         if self.W is None:
             raise Exception('No whitening matrix is found. Try to fit before transform.')
+        
+        X = self.min_max_scale(X)
         return np.matmul(X - self.X_mean, self.W.T)
