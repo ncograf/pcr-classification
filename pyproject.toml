@@ -2,8 +2,11 @@
 name = "ds-lab"
 version = "0.1.0"
 description = ""
-authors = ["Nico Graf <ncograf@gmail.com>"]
+authors = ["Nico Graf <nico.graf@math.ethz.ch>", "Gernot Zöcklein <gzoecklein@student.ethz.ch>, "Ivan Baburin <ivan.baburin@inf.ethz.ch>"]
 readme = "README.md"
+packages = [
+    {include = "*", from = "code/libs"}
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
