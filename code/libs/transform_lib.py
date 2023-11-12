@@ -2,7 +2,6 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum
 from sklearn.base import BaseEstimator, TransformerMixin
-from typing import overload, Tuple
 
 
 # possible classes for data whitening
@@ -120,3 +119,40 @@ class WhitenTransformer(BaseEstimator, TransformerMixin):
         
         X = self.min_max_scale(X)
         return np.matmul(X - self.X_mean, self.W.T)
+
+class RemoveNegativeTransformer(BaseEstimator):
+    
+    def __init__(self, negative_control : npt.ArrayLike):
+        """Transformer removing the negative cluster
+        (the culster which is negative in all dimensions)
+        based on the negative control sample.
+        
+        The object exposes
+        - self.mask: the mask, 0 for all points (from the last executed transform) 
+            smaller in all dimension that the negative control
+
+        Args:
+            negative_control (npt.ArrayLike): Negative contorl cluster based on which to select.
+        """
+
+        self.neg_control = negative_control
+        self.max = np.max(negative_control, axis = 0)
+    
+    def transform(self, X : npt.ArrayLike, y : npt.ArrayLike = None) -> npt.ArrayLike:
+        """Cuts out all the points which smaller that the maximum value in some axis of the
+        zero cluster.
+
+        Args:
+            X (npt.ArrayLike): Points to be transformed
+
+        Returns:
+            Tuple[npt.ArrayLike]: _description_
+        """
+        assert self.neg_control.shape[1] == X.shape[1]
+
+        # just take the maximum of the zero cluster
+        self.X_full = X
+        self.mask = np.any(X >= self.max, axis = 1)
+        self.X_out = X[self.mask]
+        
+        return self.X_out
