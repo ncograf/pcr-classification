@@ -3,6 +3,8 @@ import numpy.typing as npt
 import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
+from icecream import ic
+from typing import Tuple, List
 
 def pairwise_plots_pred_true(df : pd.DataFrame, predicted_label : npt.ArrayLike, true_label : npt.ArrayLike):
     """Plots the chosen dataframe after the transformation, pojected onto two dimension
@@ -174,4 +176,144 @@ def plot_cov(df : pd.DataFrame):
     cb = plt.colorbar()
     cb.ax.tick_params(labelsize=14)
     plt.title('Covariance Matrix', fontsize=16)
+    plt.show()
+    
+
+def plot_pairwise_selection(
+                            data_points : pd.DataFrame,
+                            predictions : pd.DataFrame,
+                            ground_trouth : pd.DataFrame,
+                            selected_pairs : List[Tuple[str, str, 0 | 1]],
+                            axis_thresh : pd.DataFrame = None,
+                            n_cols : int = 2,
+                            ):
+    
+    # check least requrements
+    for (color_one, color_two) in selected_pairs:
+
+        assert color_two in data_points.columns
+        assert color_one in data_points.columns
+
+        assert color_two in predictions.columns
+        assert color_one in predictions.columns
+
+        assert color_two in ground_trouth.columns
+        assert color_one in ground_trouth.columns
+
+        if not axis_thresh  is None:
+            assert color_two in axis_thresh.columns
+            assert color_one in axis_thresh.columns
+
+
+    assert ground_trouth.shape[0] == predictions.shape[0]
+    assert ground_trouth.shape[0] == data_points.shape[0]
+
+    # --------
+    # plotting
+    # --------
+    
+    # check the number of plots to be created
+    n = len(selected_pairs)
+    n_rows = n // n_cols + 0 if n % n_cols == 0 else 1
+    
+    fig, ax = plt.subplots(n_rows, n_cols, sharex=False, sharey=False)
+    fig.set_figheight(5 * n_rows)
+    fig.set_figwidth(7 * n_cols)
+    
+    # iterate over combinations for subplots
+    for i, (col_one, col_two) in enumerate(selected_pairs): 
+
+        # false positives = 1, false negatives = -1
+        true_labels = ground_trouth.loc[:,col_one].to_numpy()
+        pred_labels = predictions.loc[:,col_one].to_numpy()
+        false_labels = pred_labels - true_labels
+        
+        # create colors
+        color_labels = pd.Series(true_labels, copy=True, dtype=str)
+        color_labels.iloc[true_labels == 1] = '#15B01A' # green
+        color_labels.iloc[true_labels == 0] = '#000000' # black
+        color_labels.iloc[false_labels == 1] = '#E50000' # red
+        color_labels.iloc[false_labels == -1] = '#7E1E9C' # purple
+        
+        x_features = data_points.loc[:, col_one].to_numpy()
+        y_features = data_points.loc[:, col_two].to_numpy()
+
+        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
+        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+        ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
+        if not axis_thresh is None:
+            ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
+    fig.tight_layout()
+    plt.show()
+    
+def plot_pairwise_selection_bayesian(
+                            data_points : pd.DataFrame,
+                            predictions : pd.DataFrame,
+                            ground_trouth : pd.DataFrame,
+                            selected_pairs : List[Tuple[str, str, 0 | 1]],
+                            axis_thresh : pd.DataFrame = None,
+                            n_cols : int = 2,
+                            ):
+    
+    # check least requrements
+    for (color_one, color_two) in selected_pairs:
+
+        assert color_two in data_points.columns
+        assert color_one in data_points.columns
+
+        assert color_two in predictions.columns
+        assert color_one in predictions.columns
+
+        assert color_two in ground_trouth.columns
+        assert color_one in ground_trouth.columns
+
+        if not axis_thresh  is None:
+            assert color_two in axis_thresh.columns
+            assert color_one in axis_thresh.columns
+
+
+    assert ground_trouth.shape[0] == predictions.shape[0]
+    assert ground_trouth.shape[0] == data_points.shape[0]
+
+    # --------
+    # plotting
+    # --------
+    
+    # check the number of plots to be created
+    n = len(selected_pairs)
+    n_rows = n // n_cols + 0 if n % n_cols == 0 else 1
+    
+    fig, ax = plt.subplots(n_rows, n_cols, sharex=False, sharey=False)
+    fig.set_figheight(5 * n_rows)
+    fig.set_figwidth(7 * n_cols)
+    
+    # iterate over combinations for subplots
+    for i, (col_one, col_two) in enumerate(selected_pairs): 
+
+        # false positives = 1, false negatives = -1
+        true_labels = ground_trouth.loc[:,col_one].to_numpy()
+        pred_labels = predictions.loc[:,col_one].to_numpy()
+        
+        # create colors
+        green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
+        green_value = np.einsum("i,j->ji", green, pred_labels)
+        black = np.array((0,0,0),dtype=np.float32) / 255 # black #000000
+        black_value = np.einsum("i,j->ji",black,  (1 - pred_labels))
+        red = np.array((229,0,0)) / 255 # red #E50000
+        red_value = np.einsum("i,j->ji",red, pred_labels) 
+        purple = np.array((126, 30 ,156), np.float32) / 255 # purple #7E1E9C
+        purple_value = np.einsum("i,j->ji",purple,  (1 - pred_labels))
+        positive_contributions = np.einsum("jc,j->jc", green_value + purple_value, (true_labels == 1))
+        negative_contributions = np.einsum("jc,j->jc", red_value + black_value, (true_labels == 0))
+        color_labels = negative_contributions + positive_contributions
+        
+        x_features = data_points.loc[:, col_one].to_numpy()
+        y_features = data_points.loc[:, col_two].to_numpy()
+
+        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
+        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+        ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
+        if not axis_thresh is None:
+            ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
+    fig.tight_layout()
     plt.show()
