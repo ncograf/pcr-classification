@@ -70,15 +70,15 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         
         self.clusters = self.cluster_algorithm.fit_predict(self.X_no_neg)
         self.cluster_list = self.split_clusters(data=self.X_no_neg, labels=self.clusters)
-
-        self.outlier_mask = np.ones_like(self.mask, dtype=bool)
-        self.outlier_mask[self.mask] = self.clusters >= 0
         
         self.min_dists = (np.max(self.X, axis=0) - np.min(self.X, axis=0)) * self.eps
 
         # make predictions
         self.cluster_predictions = self.compute_cluster_labels(cluster_list=self.cluster_list, min_dist=self.min_dists)
         self.no_neg_predictions = self.predict_clusters(self.cluster_predictions, self.clusters)
+        
+        # mark outliers
+        self.no_neg_predictions[self.clusters < 0] = -1
         
         # add all negatives
         all_predictions = np.zeros_like(X)
@@ -89,13 +89,31 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
     
         return self.predictions_df
     
-    def predict_clusters(self, cluster_predictions: npt.ArrayLike, cluster_labels: npt.ArrayLike ):
+    def predict_clusters(self, cluster_predictions: npt.ArrayLike, cluster_labels: npt.ArrayLike ) -> npt.NDArray:
+        """Get from cluster prediction to point predictions using the cluster assignments
+
+        Args:
+            cluster_predictions (npt.ArrayLike): Predictions of diseases for each cluster
+            cluster_labels (npt.ArrayLike): Points to cluster mapping
+
+        Returns:
+            NDArray: Predictions on points
+        """
         predictions = np.zeros((cluster_labels.shape[0], cluster_predictions.shape[1]))
         for c in range(cluster_predictions.shape[0]):
             predictions[cluster_labels == c] = cluster_predictions[c]
         return predictions
 
     def split_clusters(self, data: np.ndarray, labels : np.ndarray) -> List[np.ndarray]:
+        """Get list, containing clusters
+
+        Args:
+            data (np.ndarray): all data points
+            labels (np.ndarray): cluster assignments
+
+        Returns:
+            List[np.ndarray]: list containing the clusters
+        """
         n_clusters = len(np.unique(labels)) - 1 # do not count outliers
         temp = [[] for _ in range(n_clusters)]
 
@@ -143,6 +161,15 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         return list
 
     def compute_cluster_labels(self, cluster_list : list[np.ndarray], min_dist : float) -> np.ndarray:
+        """Predict labels for each cluster
+
+        Args:
+            cluster_list (list[np.ndarray]): List containing the clusters
+            min_dist (float): minimal distance needed for cluster to be separated
+
+        Returns:
+            np.ndarray: Indicators for diseases present in each cluster
+        """
         
         n_clusters = len(cluster_list)
         dim = cluster_list[0].shape[1]
