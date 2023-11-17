@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import numpy.typing as npt
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
-from typing import List
+from typing import Dict, List
 import transform_lib
 from enum import Enum 
 
@@ -66,68 +66,75 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         # only cluster positives
         self.X = X
         self.X_no_neg = self.negative_remover.transform(X)
-        self.mask = self.negative_remover.mask
+        self.X_no_neg_mask = self.negative_remover.mask
         
-        self.clusters = self.cluster_algorithm.fit_predict(self.X_no_neg)
-        self.cluster_list = self.split_clusters(data=self.X_no_neg, labels=self.clusters)
+        self.clusters_no_neg = self.cluster_algorithm.fit_predict(self.X_no_neg)
+        self.cluster_no_neg_masks = self.split_clusters(labels=self.clusters_no_neg)
         
+        # mark outliers using boolean masks
+        self.outlier_no_neg_mask = self.clusters_no_neg < 0
+        self.outlier_all_mask = np.zeros_like(self.X_no_neg_mask, dtype=bool)
+        self.outlier_all_mask[self.X_no_neg_mask] = self.outlier_no_neg_mask
+        
+        # The removed zero cluster is added as a last cluster
+        self.clusters_all = np.zeros_like(self.X_no_neg_mask)
+        self.clusters_all[self.X_no_neg_mask] = self.clusters_no_neg
+        self.clusters_all[np.logical_not(self.X_no_neg_mask)] = np.max(self.clusters_no_neg) + 1
+        
+        # compute min distance from eps
         self.min_dists = (np.max(self.X, axis=0) - np.min(self.X, axis=0)) * self.eps
 
         # make predictions
-        self.cluster_predictions = self.compute_cluster_labels(cluster_list=self.cluster_list, min_dist=self.min_dists)
-        self.no_neg_predictions = self.predict_clusters(self.cluster_predictions, self.clusters)
-        
-        # mark outliers
-        self.no_neg_predictions[self.clusters < 0] = -1
+        self.cluster_predictions_no_neg = self.compute_cluster_labels(self.X_no_neg, cluster_mask=self.cluster_no_neg_masks, min_dist=self.min_dists)
+        self.predictions_no_neg = self.predict_clusters(self.cluster_predictions_no_neg, self.clusters_no_neg, self.cluster_no_neg_masks)
+        self.predictions_no_neg[self.outlier_no_neg_mask,:] = -1
         
         # add all negatives
         all_predictions = np.zeros_like(X)
-        all_predictions[self.mask] = self.no_neg_predictions
+        all_predictions[self.X_no_neg_mask] = self.predictions_no_neg
         
-        # add labels to predictions
+        # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = all_predictions, columns=self.prediction_axis)
     
         return self.predictions_df
     
-    def predict_clusters(self, cluster_predictions: npt.ArrayLike, cluster_labels: npt.ArrayLike ) -> npt.NDArray:
+    def predict_clusters(self,
+                         cluster_predictions: Dict[int, npt.ArrayLike],
+                         cluster_labels: npt.ArrayLike,
+                         cluster_masks: Dict[int, npt.ArrayLike]) -> npt.NDArray:
         """Get from cluster prediction to point predictions using the cluster assignments
 
         Args:
-            cluster_predictions (npt.ArrayLike): Predictions of diseases for each cluster
+            cluster_predictions (Dict[int, array_like]]): Predictions of diseases for each cluster
             cluster_labels (npt.ArrayLike): Points to cluster mapping
+            cluster_mask (Dict[int, array_like]): masks for each cluster
 
         Returns:
             NDArray: Predictions on points
         """
-        predictions = np.zeros((cluster_labels.shape[0], cluster_predictions.shape[1]))
-        for c in range(cluster_predictions.shape[0]):
-            predictions[cluster_labels == c] = cluster_predictions[c]
+        predictions = np.zeros((cluster_labels.shape[0], cluster_predictions[0].shape[0]))
+        for c in cluster_masks.keys():
+            predictions[cluster_masks[c]] = cluster_predictions[c]
         return predictions
 
-    def split_clusters(self, data: np.ndarray, labels : np.ndarray) -> List[np.ndarray]:
-        """Get list, containing clusters
+    def split_clusters(self, labels : np.ndarray) -> Dict[int, npt.NDArray]:
+        """Get list, containing masks for clusters
 
         Args:
-            data (np.ndarray): all data points
             labels (np.ndarray): cluster assignments
 
         Returns:
-            List[np.ndarray]: list containing the clusters
+            Dict[int, np.ndarray]: list containing the cluster masks
         """
-        n_clusters = len(np.unique(labels)) - 1 # do not count outliers
-        temp = [[] for _ in range(n_clusters)]
+        cluster_masks = {}
+        
+        for label in np.unique(labels):
+            cluster_masks[label] = labels == label
 
-        # number of data points in total (number of rows)
-        N = data.shape[0]
-
-        for i in range(0, N):
-            if labels[i] >= 0:
-                temp[labels[i]].append(data[i, :])
-            
-        return [np.array(elem) for elem in temp]
+        return cluster_masks
 
     #returns feature coordinates mapped to the Comparator class based on which coordinates are different
-    def compare_clusters(self, base_cluster : np.ndarray, other_cluster : np.ndarray, min_dist ) -> list[Comparator]:
+    def compare_clusters(self, base_cluster : np.ndarray, other_cluster : np.ndarray, min_dist ) -> List[Comparator]:
         """ Based on the ratios base_mean / other_mean and other_mean / base_mean, using the threshhold
         the desition for base is Larger than other, base is Smaller than other or equal
 
@@ -160,28 +167,30 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         
         return list
 
-    def compute_cluster_labels(self, cluster_list : list[np.ndarray], min_dist : float) -> np.ndarray:
+    def compute_cluster_labels(self,data : npt.ArrayLike, cluster_mask : List[npt.ArrayLike], min_dist : float) -> np.ndarray:
         """Predict labels for each cluster
 
         Args:
-            cluster_list (list[np.ndarray]): List containing the clusters
+            data (array_like): All data points
+            cluster_list (List[array_like]): List containing the clusters
             min_dist (float): minimal distance needed for cluster to be separated
 
         Returns:
             np.ndarray: Indicators for diseases present in each cluster
         """
         
-        n_clusters = len(cluster_list)
-        dim = cluster_list[0].shape[1]
+        cluster_mask.pop(-1) # get rid of outliers
+        n_clusters = len(cluster_mask)
+        dim = data.shape[1]
 
-        cluster_labels = np.zeros((n_clusters,dim))
+        cluster_labels = dict([(i,np.zeros(dim)) for i in cluster_mask.keys()])
         
         # A_{i,j,d} =  cluster_i <= cluster_j in dimension d
         A = np.ones((n_clusters,n_clusters,dim), dtype=bool)
 
-        for j in range(n_clusters):
-            for i in range(n_clusters):
-                comparisons = self.compare_clusters(cluster_list[i], cluster_list[j], min_dist)
+        for j in cluster_mask.keys():
+            for i in cluster_mask.keys():
+                comparisons = self.compare_clusters(data[cluster_mask[i]], data[cluster_mask[j]], min_dist)
                 for d in range(dim):
                     if comparisons[d] == self.Comparator.SMALLER:
                         A[i,j,d] = 1
@@ -197,8 +206,8 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         # cluster_i is considered active in dimension d iff
         # \exists j : cluster_i >_d cluster_j and cluster_j >=_d' cluster_i \forall d' \neq d)
         for d in range(dim):
-            for j in range(n_clusters):
-                for i in range(n_clusters):
+            for j in cluster_mask.keys():
+                for i in cluster_mask.keys():
                     if A[i,j,d] == 0: # cluster_j <_d cluster_i
                         temp = 1
                         for d_ in range(dim):
@@ -207,5 +216,5 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
                             if A[i,j,d_] == 0:
                                 temp = 0
                         if temp == 1:
-                            cluster_labels[i, d] = 1
+                            cluster_labels[i][d] = 1
         return cluster_labels

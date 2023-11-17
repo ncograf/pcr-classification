@@ -1,19 +1,25 @@
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+from typing import Dict, List, Tuple
 from icecream import ic
 
-def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame):
+def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None):
     """Print some statistics such as false negatives / positives
 
     Args:
         true_labels (DataFrame): Ground truth to determine statistics
         predicted_labels (DataFrame): Predictions based on some algorithm
+        mask (array_like, optional): Mask to filter e.g. outlier. Defaults to None.
     """
+    
+    if mask is None:
+        mask = np.ones(df_true_labels.shape[0], dtype=bool)
     
     df_true_labels = df_true_labels.loc[:,df_predicted_labels.columns]
     
-    np_true_labels = np.array(df_true_labels)
-    np_predicted_labels = np.array(df_predicted_labels)
+    np_true_labels = np.array(df_true_labels.iloc[mask,:])
+    np_predicted_labels = np.array(df_predicted_labels.iloc[mask,:])
     
     assert np_true_labels.shape == np_predicted_labels.shape
     assert (df_true_labels.columns == df_predicted_labels.columns).all()
@@ -75,8 +81,8 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     recall_class = n_true_pos_class / (n_true_pos_class + n_false_neg_class)
     df_recall_class = pd.DataFrame(data=recall_class, columns=df_predicted_labels.columns)
 
-    accuracy = (n_true_positives + n_true_negatives) / (n_true_positives + n_true_positives + n_false_negatives + n_true_negatives)
-    accuracy_class = (n_true_pos_class + n_true_neg_class) / (n_true_pos_class + n_true_pos_class + n_false_neg_class + n_true_neg_class)
+    accuracy = (n_true_positives + n_true_negatives) / (n_false_positives + n_true_positives + n_false_negatives + n_true_negatives)
+    accuracy_class = (n_true_pos_class + n_true_neg_class) / (n_false_pos_class + n_true_pos_class + n_false_neg_class + n_true_neg_class)
     df_accuracy_class = pd.DataFrame(data=accuracy_class, columns=df_predicted_labels.columns)
 
     f1 = 2 * (precision * recall) / (precision + recall)
@@ -94,3 +100,77 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     print(f'Recall (TP / (TP + FN)): {recall}\n{df_recall_class.to_string(index=False)}\n')
     print(f'Accuracy ((TP + TN) / (P + N)): {accuracy}\n{df_accuracy_class.to_string(index=False)}\n')
     print(f'F1 (2 * (precision * recall) / (precision + recall)): {f1}\n{df_f1_class.to_string(index=False)}\n')
+
+
+
+def get_false_clusters(cluster_mask : Dict[int, npt.ArrayLike],
+                       df_true_labels : pd.DataFrame,
+                       df_predictions : pd.DataFrame,
+                       disease : str | List[str],
+                       mask : npt.ArrayLike = None) -> List[int]:
+    """Compute the indices of the falsely classified points
+
+    Args:
+        cluster_mask (Dict[npt.ArrayLike]): List of masks for each cluster
+        df_true_labels (pd.DataFrame): Ture labels
+        df_predictions (pd.DataFrame): False labels
+        disease (str | List[str]): Disease indicators
+        mask (array_like, optional): Mask for filtering `df_true_labels` and `df_predictions`
+
+    Returns:
+        List[int]: Clusters which are falsely classified
+    """
+    if isinstance(disease, str):
+        disease = [disease]
+
+    false_list = []
+
+    if mask is None:
+        mask = np.ones(df_true_labels.shape[0], dtype=bool)
+    
+    df_true_labels = df_true_labels.iloc[mask,:]
+    df_predictions = df_predictions.iloc[mask,:]
+    
+    for dim in disease:
+        for cluster in cluster_mask.keys():
+            true_cluster_labels = df_true_labels.loc[cluster_mask[cluster], dim]
+            predicted_label = df_predictions.loc[cluster_mask[cluster], dim]
+            n_cluster = true_cluster_labels.shape[0]
+            assert true_cluster_labels.shape == predicted_label.shape
+            n_true = np.sum(np.array(true_cluster_labels) == np.array(predicted_label))
+            if n_true / n_cluster < 1:
+                false_list.append(cluster)
+    
+    return false_list
+
+def get_false_cluster_for_plotting(df_data_points : pd.DataFrame,
+                                   df_predictions : pd.DataFrame,
+                                   df_ground_truth : pd.DataFrame,
+                                   cluster_masks : Dict[int, npt.ArrayLike],
+                                   false_clusters : List[int],
+                                   all_mask : npt.ArrayLike = None) -> Tuple[pd.DataFrame]:
+    """Extract only the falsely labelled data
+
+    Args:
+        df_data_points (pd.DataFrame): All the dataframe points
+        df_predictions (pd.DataFrame): All the predictions
+        df_ground_truth (pd.DataFrame): All ground truth data
+        cluster_masks (Dict[npt.ArrayLike]): Cluster masks for each cluster
+        false_clusters (List[int]): List of clusters to exract
+        all_mask (npt.ArrayLike, optional): Selection of points, usually to fit the cluster masks. Defaults to None.
+
+    Returns:
+        Tuple[pd.DataFrame]: _description_
+    """
+    if all_mask is None:
+        all_mask = np.ones(df_data_points.shape[0], dtype=bool)
+
+    np_data = np.concatenate([df_data_points.iloc[all_mask,:].iloc[cluster_masks[k]] for k in false_clusters])
+    np_predicions = np.concatenate([df_predictions.iloc[all_mask,:].iloc[cluster_masks[k]] for k in false_clusters])
+    np_ground_truth = np.concatenate([df_ground_truth.iloc[all_mask,:].iloc[cluster_masks[k]] for k in false_clusters])
+    data = pd.DataFrame(data=np_data, columns=df_data_points.columns)
+    predictions = pd.DataFrame(data=np_predicions, columns=df_predictions.columns)
+    ground_truth = pd.DataFrame(data=np_ground_truth, columns=df_ground_truth.columns)
+
+    return data, predictions, ground_truth
+    
