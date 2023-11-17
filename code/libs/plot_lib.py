@@ -6,8 +6,15 @@ import itertools
 from icecream import ic
 from typing import Tuple, List
 
-def pairwise_plots_pred_true(df : pd.DataFrame, predicted_label : npt.ArrayLike, true_label : npt.ArrayLike):
-    """Plots the chosen dataframe after the transformation, pojected onto two dimension
+def pairwise_plots_pred_true(df : pd.DataFrame,
+                                predicted_label : npt.ArrayLike,
+                                true_label : npt.ArrayLike,
+                                axis_thresh : float | npt.ArrayLike = None):
+    """Plots the chosen dataframe, pojected onto two dimensions for all possible combinations
+    of tow dimensions. Optionally threshholds are also drawn.
+    
+    Note that in case threshholds are used, it is important that the scale of df matches the
+    scale in which the threshholds are applied.
 
     True positives: green
     False positivs: red
@@ -18,61 +25,7 @@ def pairwise_plots_pred_true(df : pd.DataFrame, predicted_label : npt.ArrayLike,
         df (pd.DataFrame): points to be plotted
         predicted_label (npt.ArrayLike): labels predicted by some algorithm
         true_label (npt.ArrayLike): labels according to "ground truth"
-    """
-
-    predicted_label = np.array(predicted_label)
-    true_label = np.array(true_label)
-
-    assert true_label.shape == predicted_label.shape
-
-    # fist six columns are features
-    df_features = df.iloc[:, :6]
-    feature_names = df_features.columns
-    
-    # false positives = 1, false negatives = -1
-    false_labels = predicted_label - true_label
-    
-    # create colors
-    color_labels = pd.Series(true_label, copy=True, dtype=str)
-    color_labels.iloc[true_label == 1] = '#15B01A' # green
-    color_labels.iloc[true_label == 0] = '#000000' # black
-    color_labels.iloc[false_labels == 1] = '#E50000' # red
-    color_labels.iloc[false_labels == -1] = '#7E1E9C' # purple
-
-    # poltting
-    combinations = itertools.combinations(feature_names, 2)
-    
-    fig, ax = plt.subplots(5, 3, sharex=False, sharey=False)
-    fig.set_figheight(15)
-    fig.set_figwidth(15)
-    
-    # iterate over combinations for subplots
-    for i, combination in enumerate(combinations): 
-        df_combo_features = df_features.loc[:, combination]
-        np_compo_features = df_combo_features.to_numpy()
-        
-        ax[i //3, i %3].set_xlabel(combination[0])
-        ax[i //3, i %3].set_ylabel(combination[1])
-        ax[i //3, i %3].scatter(np_compo_features[:,0], np_compo_features[:,1], c = color_labels)
-    fig.tight_layout()
-    plt.show()
-
-def pairwise_plots_pred_true_thresh(df : pd.DataFrame,
-                                    predicted_label : npt.ArrayLike,
-                                    true_label : npt.ArrayLike,
-                                    axis_thresh : float | npt.ArrayLike):
-    """Plots the chosen dataframe after the transformation, pojected onto two dimension
-
-    True positives: green
-    False positivs: red
-    True negatives: back
-    False negatives: purple
-
-    Args:
-        df (pd.DataFrame): points to be plotted
-        predicted_label (npt.ArrayLike): labels predicted by some algorithm
-        true_label (npt.ArrayLike): labels according to "ground truth"
-        axis_thresh (float | npt.ArrayLike): theshholds where the distinction was done.
+        axis_thresh (float | npt.ArrayLike, optional): theshholds where the distinction was done. Defaults to None.
     """
 
     # convert to numpy
@@ -92,7 +45,8 @@ def pairwise_plots_pred_true_thresh(df : pd.DataFrame,
     feature_names = df_features.columns
     
     # name thresholds for convenience
-    df_axis_thresh = pd.DataFrame(data=axis_thresh.reshape(1,-1), columns=feature_names)
+    if not axis_thresh is None:
+        df_axis_thresh = pd.DataFrame(data=axis_thresh.reshape(1,-1), columns=feature_names)
     
     # false positives = 1, false negatives = -1
     false_labels = predicted_label - true_label
@@ -121,21 +75,13 @@ def pairwise_plots_pred_true_thresh(df : pd.DataFrame,
         ax[i //3, i %3].set_xlabel(x_feature)
         ax[i //3, i %3].set_ylabel(y_feature)
         ax[i //3, i %3].scatter(np_compo_features[:,0], np_compo_features[:,1], c = color_labels)
-        ax[i //3, i %3].axhline(y = df_axis_thresh.loc[0,y_feature], c="#000000", linestyle='-')
-        ax[i //3, i %3].axvline(x = df_axis_thresh.loc[0,x_feature], c="#000000", linestyle='-')
+        if not axis_thresh is None:
+            ax[i //3, i %3].axhline(y = df_axis_thresh.loc[0,y_feature], c="#000000", linestyle='-')
+            ax[i //3, i %3].axvline(x = df_axis_thresh.loc[0,x_feature], c="#000000", linestyle='-')
     fig.tight_layout()
     plt.show()
     
 def pairwise_plots_label(df : pd.DataFrame, label : np.array = None):
-    """Plots the chosen dataframe after the transformation, pojected onto two dimension
-
-    Args:
-        label (str): Selected Label out of LABELS_LIST
-        data_sets (List[str]): List of dataset(s) to include in the plot
-        classifier (skl.base.ClusterMixin): Classifier to be used for unsupervised clustering
-        data_folder (str, optional): Data folder to explore datasets. Defaults to "../Data".
-        verbose (bool, optional): If true prints information about found clusters and hitting rates for labels. Defaults to False.
-    """
 
     # fist six columns are features
     df_features = df.iloc[:, :6]
@@ -183,7 +129,7 @@ def plot_pairwise_selection(
                             data_points : pd.DataFrame,
                             predictions : pd.DataFrame,
                             ground_trouth : pd.DataFrame,
-                            selected_pairs : List[Tuple[str, str, 0 | 1]],
+                            selected_pairs : List[Tuple[str, str]],
                             axis_thresh : pd.DataFrame = None,
                             n_cols : int = 2,
                             ):
@@ -235,6 +181,10 @@ def plot_pairwise_selection(
         color_labels.iloc[false_labels == 1] = '#E50000' # red
         color_labels.iloc[false_labels == -1] = '#7E1E9C' # purple
         
+        # get outliers
+        color_labels.iloc[pred_labels < 0] = '#FFFF33'  # ugly yellow
+        
+        
         x_features = data_points.loc[:, col_one].to_numpy()
         y_features = data_points.loc[:, col_two].to_numpy()
 
@@ -250,9 +200,10 @@ def plot_pairwise_selection_bayesian(
                             data_points : pd.DataFrame,
                             predictions : pd.DataFrame,
                             ground_trouth : pd.DataFrame,
-                            selected_pairs : List[Tuple[str, str, 0 | 1]],
+                            selected_pairs : List[Tuple[str, str]],
                             axis_thresh : pd.DataFrame = None,
                             n_cols : int = 2,
+                            title : str = None,
                             ):
     
     # check least requrements
@@ -306,6 +257,9 @@ def plot_pairwise_selection_bayesian(
         positive_contributions = np.einsum("jc,j->jc", green_value + purple_value, (true_labels == 1))
         negative_contributions = np.einsum("jc,j->jc", red_value + black_value, (true_labels == 0))
         color_labels = negative_contributions + positive_contributions
+
+        # get outliers
+        color_labels.iloc[pred_labels < 0] = np.array((255,255,0)) #'FFFF33'  ugly yellow
         
         x_features = data_points.loc[:, col_one].to_numpy()
         y_features = data_points.loc[:, col_two].to_numpy()
@@ -315,5 +269,37 @@ def plot_pairwise_selection_bayesian(
         ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
         if not axis_thresh is None:
             ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
+    fig.tight_layout()
+    if not title is None:
+        fig.subplots_adjust(top=0.9)
+        fig.suptitle(title, fontsize=24)
+    plt.show()
+
+
+def plot_pairwise_selection_label(data_points : pd.DataFrame, 
+                                  selected_pairs : List[Tuple[str, str]],
+                                  label : np.array = None,
+                                  n_cols : int = 2,
+                                  ):
+
+    # check the number of plots to be created
+    n = len(selected_pairs)
+    n_rows = n // n_cols + 0 if n % n_cols == 0 else 1
+    
+    fig, ax = plt.subplots(n_rows, n_cols, sharex=False, sharey=False)
+    fig.set_figheight(5 * n_rows)
+    fig.set_figwidth(7 * n_cols)
+    
+    # iterate over combinations for subplots
+    for i, (col_one, col_two) in enumerate(selected_pairs): 
+
+        # false positives = 1, false negatives = -1
+        x_features = data_points.loc[:, col_one].to_numpy()
+        y_features = data_points.loc[:, col_two].to_numpy()
+
+        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
+        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+        ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = label)
+
     fig.tight_layout()
     plt.show()
