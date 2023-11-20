@@ -89,12 +89,8 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         # add transformed properties to clusters
         self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
         
-        
         # make cluster predictions
         self.cluster_dict = self.predict_cluster_labels(self.X_transformed, clusters=self.cluster_dict, eps=self.eps)
-
-        # add covariances and only keep clusters which have a invertable covariance
-        self.cluster_dict = self.get_cluster_covs(self.X, self.cluster_dict)
 
         # generate label predicitions
         self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
@@ -147,20 +143,6 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         
         return clusters
     
-    def get_cluster_covs(self, data : npt.ArrayLike, clusters : Dict[int, transform_lib.Cluster]) -> Dict[int, transform_lib.Cluster]:
-        new_clusters = {}
-        for k in clusters.keys():
-            loc_dat = data[clusters[k].mask,:].T
-            cov = np.cov(loc_dat)
-            try:
-                np.linalg.inv(cov)
-                new_clusters[k] = clusters[k]
-                new_clusters[k].cov = cov
-            except np.linalg.LinAlgError:
-                pass
-        return new_clusters
-            
-
     def get_clusters_and_outlier(self, data : npt.ArrayLike, cluster_engine : ClusterMixin, get_outliers=True, contamination = 0.001) -> npt.NDArray:
 
         if get_outliers:
