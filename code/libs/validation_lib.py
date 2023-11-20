@@ -4,13 +4,14 @@ import pandas as pd
 from typing import Dict, List, Tuple
 from icecream import ic
 
-def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None):
+def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 0):
     """Print some statistics such as false negatives / positives
 
     Args:
         true_labels (DataFrame): Ground truth to determine statistics
         predicted_labels (DataFrame): Predictions based on some algorithm
         mask (array_like, optional): Mask to filter e.g. outlier. Defaults to None.
+        verbosity (int, optional): 0 -> only stats, 1 -> stats + number of points in classes . Defaults to 0.
     """
     
     if mask is None:
@@ -34,6 +35,9 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     error_matrix = error_matrix[np.logical_not(outlier_mask),:]
     np_true_labels_no_outliers = np_true_labels[np.logical_not(outlier_mask),:]
     
+    # n_points
+    n_points = np.sum(np.logical_not(outlier_mask))
+    
     # compute total statistics
     abs_error_matrix = np.abs(error_matrix)
     abs_error_rate = np.mean(abs_error_matrix)
@@ -44,21 +48,25 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     true_negatives = np.logical_and(error_matrix == 0, np_true_labels_no_outliers == 0)
     n_true_negatives = np.sum(true_negatives)
     n_true_neg_class = np.sum(true_negatives, axis=0).reshape(1,-1)
+    df_ture_neg_class = pd.DataFrame(data=n_true_neg_class, columns=df_predicted_labels.columns)
 
     # false negatives
     false_negatives = error_matrix == -1
     n_false_negatives = np.sum(false_negatives)
     n_false_neg_class = np.sum(false_negatives, axis=0).reshape(1,-1)
+    df_false_neg_class = pd.DataFrame(data=n_false_neg_class, columns=df_predicted_labels.columns)
     
     # true positives
     true_positives = np.logical_and(error_matrix == 0, np_true_labels_no_outliers == 1)
     n_true_positives = np.sum(true_positives)
     n_true_pos_class = np.sum(true_positives, axis=0).reshape(1,-1)
+    df_true_pos_class = pd.DataFrame(data=n_true_pos_class, columns=df_predicted_labels.columns)
     
     # false positives
     false_positives = error_matrix == 1
     n_false_positives = np.sum(false_positives)
     n_false_pos_class = np.sum(false_positives, axis=0).reshape(1,-1)
+    df_false_pos_class = pd.DataFrame(data=n_false_pos_class, columns=df_predicted_labels.columns)
 
     # stats
     precision = (n_true_positives) / (n_true_positives + n_false_positives)
@@ -87,6 +95,12 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
 
     
     print(f'Outlier rate: {outlier_rate}, n_outlier: {n_outlier}\n')
+    if(verbosity >= 1):
+        print(f'Total Total Points: {n_points}\n')
+        print(f'Total TN (True Negatives): {n_true_negatives}\n{df_ture_neg_class.to_string(index=False)}\n')
+        print(f'Total TP (True Positives): {n_true_positives}\n{df_true_pos_class.to_string(index=False)}\n')
+        print(f'Total FN (False Negatives): {n_false_negatives}\n{df_false_neg_class.to_string(index=False)}\n')
+        print(f'Total FP (False Positives): {n_false_positives}\n{df_false_pos_class.to_string(index=False)}\n')
     print(f'Total error rate: {abs_error_rate}\n{df_abs_error_rate_class.to_string(index=False)}\n')
     print(f'Precision (TP / (TP + FP)): {precision}\n{df_precision_class.to_string(index=False)}\n')
     print(f'Recall / TPR (TP / (TP + FN)): {recall}\n{df_recall_class.to_string(index=False)}\n')
@@ -95,13 +109,15 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     print(f'Balanced Accuracy (Specificity + Recall) / 2: {balanced_accuracy}\n{df_balanced_accuracy_class.to_string(index=False)}\n')
     print(f'F1 (2 * (precision * recall) / (precision + recall)): {f1}\n{df_f1_class.to_string(index=False)}\n')
 
+    return false_negatives, false_positives
 
 
 def get_false_clusters(cluster_mask : Dict[int, npt.ArrayLike],
                        df_true_labels : pd.DataFrame,
                        df_predictions : pd.DataFrame,
                        disease : str | List[str],
-                       mask : npt.ArrayLike = None) -> List[int]:
+                       mask : npt.ArrayLike = None,
+                       threshold : float = 1) -> List[int]:
     """Compute the indices of the falsely classified points
 
     Args:
@@ -110,6 +126,7 @@ def get_false_clusters(cluster_mask : Dict[int, npt.ArrayLike],
         df_predictions (pd.DataFrame): False labels
         disease (str | List[str]): Disease indicators
         mask (array_like, optional): Mask for filtering `df_true_labels` and `df_predictions`
+        threshold (float): below what precentage of misspredictions we want the cluster to be displayed
 
     Returns:
         List[int]: Clusters which are falsely classified
@@ -118,6 +135,7 @@ def get_false_clusters(cluster_mask : Dict[int, npt.ArrayLike],
         disease = [disease]
 
     false_list = []
+    false_rate = []
 
     if mask is None:
         mask = np.ones(df_true_labels.shape[0], dtype=bool)
@@ -131,11 +149,15 @@ def get_false_clusters(cluster_mask : Dict[int, npt.ArrayLike],
             predicted_label = df_predictions.loc[cluster_mask[cluster], dim]
             n_cluster = true_cluster_labels.shape[0]
             assert true_cluster_labels.shape == predicted_label.shape
-            n_true = np.sum(np.array(true_cluster_labels) == np.array(predicted_label))
-            if n_true / n_cluster < 1:
+            n_true = np.sum(np.array(true_cluster_labels, dtype=bool) == np.array(predicted_label, dtype=bool))
+            if n_true / n_cluster < threshold:
+                false_rate.append(n_cluster - n_true)
                 false_list.append(cluster)
+                ic(cluster, dim, n_cluster - n_true)
     
-    return false_list
+    order = np.argsort(false_rate)
+    
+    return np.unique(np.array(false_list)[order])
 
 def get_false_cluster_for_plotting(df_data_points : pd.DataFrame,
                                    df_predictions : pd.DataFrame,
