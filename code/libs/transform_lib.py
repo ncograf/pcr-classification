@@ -3,6 +3,28 @@ import numpy.typing as npt
 from enum import Enum
 from sklearn.base import BaseEstimator, TransformerMixin
 
+class Cluster():
+    
+    def __init__(self,
+                 data : npt.ArrayLike,
+                 mask : npt.ArrayLike,
+                 ):
+        loc_data = np.array(data)[mask,:]
+
+        self.labels = np.zeros(loc_data.shape[1])
+
+        # untransformed data
+        self.mask = mask
+        self.mean = np.mean(loc_data, axis=0)
+        self.max = np.max(loc_data, axis=0)
+        self.min = np.min(loc_data, axis=0)
+        self.cov = None
+
+
+        # on transformed data
+        self.mean_t = None
+        self.max_t = None
+        self.min_t = None
 
 # possible classes for data whitening
 class Whitenings(Enum):
