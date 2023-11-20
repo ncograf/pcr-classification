@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import numpy.typing as npt
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
+from sklearn.ensemble import IsolationForest
 from typing import Dict, List
 import transform_lib
 from enum import Enum 
@@ -11,7 +12,9 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
     def __init__(self, 
                  negative_control : npt.ArrayLike,
                  cluster_algorithm : ClusterMixin,
+                 whitening_transformer : TransformerMixin,
                  eps : float = 1.7,
+                 contamination : float = 0.001,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']):
         """Initialize classifier with important parameters
 
@@ -39,17 +42,14 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         # store local variables
         self.prediction_axis = prediction_axis
         self.cluster_algorithm = cluster_algorithm
+        self.whitening_transformer = whitening_transformer
         self.negative_control = negative_control
         self.negative_remover = transform_lib.RemoveNegativeTransformer(self.negative_control)
         self.eps = eps
+        self.contamination = 0.001
         
         self.cluster_labels = None
 
-    class Comparator(Enum):
-        SMALLER = -1
-        EQUAL = 0
-        LARGER = 1
-    
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
                 ) -> pd.DataFrame:
@@ -68,7 +68,7 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         self.X_no_neg = self.negative_remover.transform(X)
         self.X_no_neg_mask = self.negative_remover.mask
         
-        self.clusters_no_neg = self.cluster_algorithm.fit_predict(self.X_no_neg)
+        self.clusters_no_neg = self.get_clusters_and_outlier(self.X_no_neg, self.cluster_algorithm, contamination=self.contamination)
         self.cluster_no_neg_masks = self.split_clusters(labels=self.clusters_no_neg)
         
         # mark outliers using boolean masks
@@ -81,11 +81,21 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         self.clusters_all[self.X_no_neg_mask] = self.clusters_no_neg
         self.clusters_all[np.logical_not(self.X_no_neg_mask)] = np.max(self.clusters_no_neg) + 1
         
-        # compute min distance from eps
-        self.min_dists = (np.max(self.X, axis=0) - np.min(self.X, axis=0)) * self.eps
-
+        # get cluster means
+        self.cluster_means = []
+        for k in self.cluster_no_neg_masks.keys():
+            if not k == -1:
+                mask = self.cluster_no_neg_masks[k]
+                self.cluster_means.append(np.mean(self.X_no_neg[mask], axis = 0))
+        self.cluster_means = np.stack(self.cluster_means, axis=0)
+        
+        # transform clusters
+        self.whitening_transformer.fit(self.cluster_means)
+        self.X_no_neg_transformed = self.whitening_transformer.transform(self.X_no_neg)
+        self.df_X_all_transformed = pd.DataFrame(data=self.whitening_transformer.transform(self.X), columns=self.prediction_axis)
+        
         # make predictions
-        self.cluster_predictions_no_neg = self.compute_cluster_labels(self.X_no_neg, cluster_mask=self.cluster_no_neg_masks, min_dist=self.min_dists)
+        self.cluster_predictions_no_neg = self.compute_cluster_labels(self.X_no_neg_transformed, cluster_mask=self.cluster_no_neg_masks, eps=self.eps)
         self.predictions_no_neg = self.predict_clusters(self.cluster_predictions_no_neg, self.clusters_no_neg, self.cluster_no_neg_masks)
         self.predictions_no_neg[self.outlier_no_neg_mask,:] = -1
         
@@ -134,86 +144,87 @@ class ClusterHierarchyMeanClassifier(BaseEstimator):
         return cluster_masks
 
     #returns feature coordinates mapped to the Comparator class based on which coordinates are different
-    def compare_clusters(self, base_cluster : np.ndarray, other_cluster : np.ndarray, min_dist ) -> List[Comparator]:
+    def compare_clusters(self, base_cluster : np.ndarray, other_cluster : np.ndarray) -> npt.NDArray:
         """ Based on the ratios base_mean / other_mean and other_mean / base_mean, using the threshhold
         the desition for base is Larger than other, base is Smaller than other or equal
 
         Args:
             base_cluster (np.ndarray): base cluster for comparison
             other_cluster (np.ndarray): other cluster for comparison
-            eps (float, optional): Threshhold for ratio for base to be considered smaller or larger. Defaults to 1.7.
 
         Returns:
-            list[Comparator]: Indication if base larger than other, base smaller than other or equal
+            NDArray: Indication if base larger than other, base smaller than other or equal
         """
         
         # number of features
         dim = base_cluster.shape[1]
         assert dim == other_cluster.shape[1], "Number of features inconsistent!"
 
-        # list of comparasings
-        list = [self.Comparator.EQUAL]*dim
-
         # we are simply performing the comparison of the midpoints to determine whther the clusters are different
         base_mid = np.mean(base_cluster, axis=0)
         other_mid = np.mean(other_cluster, axis=0)
-        for i in range(0, dim):
-            if (base_mid[i] - other_mid[i] > min_dist[i]):
-                list[i] = self.Comparator.LARGER
-            elif (other_mid[i] - base_mid[i] > min_dist[i]):
-                list[i] = self.Comparator.SMALLER
-            else:
-                list[i] = self.Comparator.EQUAL
-        
-        return list
+        return base_mid - other_mid
+    
+    def get_clusters_and_outlier(self, data : npt.ArrayLike, cluster_engine : ClusterMixin, get_outliers=True, contamination = 0.0005) -> npt.NDArray:
 
-    def compute_cluster_labels(self,data : npt.ArrayLike, cluster_mask : List[npt.ArrayLike], min_dist : float) -> np.ndarray:
+        if get_outliers:
+            outlier_detector = IsolationForest(contamination=contamination,
+                                               n_jobs=4,
+                                               max_samples=data.shape[0],
+                                               n_estimators=10)
+            labels = outlier_detector.fit_predict(data) # outliers will get label -1
+            labels[labels >= 0] = cluster_engine.fit_predict(data[labels >= 0])
+        else:
+            labels = cluster_engine.fit_predict(data)
+        
+        return labels
+
+
+
+    def compute_cluster_labels(self,data : npt.ArrayLike, cluster_mask : List[npt.ArrayLike], eps : float) -> npt.NDArray:
         """Predict labels for each cluster
 
         Args:
             data (array_like): All data points
             cluster_list (List[array_like]): List containing the clusters
-            min_dist (float): minimal distance needed for cluster to be separated
+            eps (float): factor for the minimal disance relative to the max
 
         Returns:
             np.ndarray: Indicators for diseases present in each cluster
         """
         
-        cluster_mask.pop(-1) # get rid of outliers
+        if -1 in cluster_mask.keys(): 
+            cluster_mask.pop(-1) # get rid of outliers
         n_clusters = len(cluster_mask)
         dim = data.shape[1]
 
         cluster_labels = dict([(i,np.zeros(dim)) for i in cluster_mask.keys()])
         
-        # A_{i,j,d} =  cluster_i <= cluster_j in dimension d
-        A = np.ones((n_clusters,n_clusters,dim), dtype=bool)
+        # A_{i,j,d} =  cluster_i - cluster_j in dimension d (where we compare midpoints)
+        A = np.ones((n_clusters,n_clusters,dim), dtype=float)
 
         for j in cluster_mask.keys():
             for i in cluster_mask.keys():
-                comparisons = self.compare_clusters(data[cluster_mask[i]], data[cluster_mask[j]], min_dist)
-                for d in range(dim):
-                    if comparisons[d] == self.Comparator.SMALLER:
-                        A[i,j,d] = 1
-                        A[j,i,d] = 0
-                    elif comparisons[d] == self.Comparator.EQUAL:
-                        A[i,j,d] = 1
-                        A[j,i,d] = 1
-                    elif comparisons[d] == self.Comparator.LARGER:
-                        A[i,j,d] = 0
-                        A[j,i,d] = 1
+                dists = np.mean(data[cluster_mask[j]],axis=0) - np.mean(data[cluster_mask[i]], axis = 0)
+                A[j,i] = dists
         
-        # let cluster_i >=_d cluster_j denote the comparison of clusters i and j in dimension d
+        D = np.max(A, axis=(0,1)) - np.min(A, axis=(0,1))
+        
+        # let A_jid denote the directed distance cluster_j - cluster_i between midpoints in dimension d
+        # let D_d denote the maximal distance between two clusters
         # cluster_i is considered active in dimension d iff
-        # \exists j : cluster_i >_d cluster_j and cluster_j >=_d' cluster_i \forall d' \neq d)
+        # \exists j : A_ijd > eps * D_d and A_ijd < -eps * D_d' \forall d' \neq d)
+        # in words this requres c_i to be lareger in dimension c_j by at least some sparating distace
+        #       and it requires c_i to be within the range of c_j for the other dimensios
         for d in range(dim):
             for j in cluster_mask.keys():
                 for i in cluster_mask.keys():
-                    if A[i,j,d] == 0: # cluster_j <_d cluster_i
+                    if A[i,j,d] > eps * D[d]: # cluster_j <_d cluster_i
                         temp = 1
                         for d_ in range(dim):
                             if d_ == d: 
                                 continue
-                            if A[i,j,d_] == 0:
+                            if A[i,j,d_] < -1.2 * eps * D[d_]: # cluster_j >=_d' cluster_i
                                 temp = 0
                         if temp == 1:
                             cluster_labels[i][d] = 1
