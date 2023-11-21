@@ -19,7 +19,10 @@ class Cluster():
         self.max = np.max(loc_data, axis=0)
         self.min = np.min(loc_data, axis=0)
         self.cov = None
-
+        self.dist = None
+        
+        # statistics
+        self.n = np.sum(self.mask)
 
         # on transformed data
         self.mean_t = None

@@ -2,17 +2,18 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from typing import Dict, List, Tuple
+from itertools import combinations
 import transform_lib
 from icecream import ic
 
-def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 0):
+def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 1):
     """Print some statistics such as false negatives / positives
 
     Args:
         true_labels (DataFrame): Ground truth to determine statistics
         predicted_labels (DataFrame): Predictions based on some algorithm
         mask (array_like, optional): Selection of points. Defaults to None.
-        verbosity (int, optional): 0 -> only stats, 1 -> stats + number of points in classes . Defaults to 0.
+        verbosity (int, optional): 0 -> balanced_accuracy, 1 -> stats, 2 -> stats + number of points in classes . Defaults to 0.
     """
     
     if mask is None:
@@ -96,19 +97,20 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
 
     
     print(f'Outlier rate: {outlier_rate}, n_outlier: {n_outlier}\n')
-    if(verbosity >= 1):
+    if(verbosity >= 2):
         print(f'Total Total Points: {n_points}\n')
         print(f'Total TN (True Negatives): {n_true_negatives}\n{df_ture_neg_class.to_string(index=False)}\n')
         print(f'Total TP (True Positives): {n_true_positives}\n{df_true_pos_class.to_string(index=False)}\n')
         print(f'Total FN (False Negatives): {n_false_negatives}\n{df_false_neg_class.to_string(index=False)}\n')
         print(f'Total FP (False Positives): {n_false_positives}\n{df_false_pos_class.to_string(index=False)}\n')
-    print(f'Total error rate: {abs_error_rate}\n{df_abs_error_rate_class.to_string(index=False)}\n')
-    print(f'Precision (TP / (TP + FP)): {precision}\n{df_precision_class.to_string(index=False)}\n')
-    print(f'Recall / TPR (TP / (TP + FN)): {recall}\n{df_recall_class.to_string(index=False)}\n')
-    print(f'Specificity / TNR (TN / (TN + FP)): {specificity}\n{df_specificity_class.to_string(index=False)}\n')
-    print(f'Accuracy ((TP + TN) / (P + N)): {accuracy}\n{df_accuracy_class.to_string(index=False)}\n')
+    if(verbosity >= 1):
+        print(f'Total error rate: {abs_error_rate}\n{df_abs_error_rate_class.to_string(index=False)}\n')
+        print(f'Precision (TP / (TP + FP)): {precision}\n{df_precision_class.to_string(index=False)}\n')
+        print(f'Recall / TPR (TP / (TP + FN)): {recall}\n{df_recall_class.to_string(index=False)}\n')
+        print(f'Specificity / TNR (TN / (TN + FP)): {specificity}\n{df_specificity_class.to_string(index=False)}\n')
+        print(f'Accuracy ((TP + TN) / (P + N)): {accuracy}\n{df_accuracy_class.to_string(index=False)}\n')
+        print(f'F1 (2 * (precision * recall) / (precision + recall)): {f1}\n{df_f1_class.to_string(index=False)}\n')
     print(f'Balanced Accuracy (Specificity + Recall) / 2: {balanced_accuracy}\n{df_balanced_accuracy_class.to_string(index=False)}\n')
-    print(f'F1 (2 * (precision * recall) / (precision + recall)): {f1}\n{df_f1_class.to_string(index=False)}\n')
 
     return false_negatives, false_positives
 
@@ -192,3 +194,107 @@ def get_false_cluster_for_plotting(df_data_points : pd.DataFrame,
 
     return data, predictions, ground_truth
     
+def validate_combinations(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 0):
+    """Print some statistics for all combinations of diseases
+
+    Args:
+        true_labels (DataFrame): Ground truth to determine statistics
+        predicted_labels (DataFrame): Predictions based on some algorithm
+        mask (array_like, optional): Selection of points. Defaults to None.
+        verbosity (int, optional): 0 -> balanced_accuracy, 1 -> stats, 2 -> stats + number of points in classes . Defaults to 0.
+    """
+    
+    if mask is None:
+        mask = np.ones(df_predicted_labels.shape[0], dtype=bool)
+    
+    df_true_labels = df_true_labels.loc[:,df_predicted_labels.columns]
+    
+    np_true_labels = np.array(df_true_labels.iloc[mask, :])
+    np_predicted_labels = np.array(df_predicted_labels.iloc[mask, :])
+    
+    assert np_true_labels.shape == np_predicted_labels.shape
+    assert (df_true_labels.columns == df_predicted_labels.columns).all()
+    
+    n_labels = df_predicted_labels.shape[1]
+    label_combinations = []
+    for sub in range(1,n_labels+1):
+        label_combinations.extend(combinations(df_predicted_labels.columns, sub))
+    
+    # compute outlier
+    outlier_mask = (np_predicted_labels < 0)[:,0]
+    n_outlier = np.sum(outlier_mask)
+
+    print(f'Total number of outlayer: {n_outlier}\n')
+
+    for labels in label_combinations:
+        
+        not_labels = df_predicted_labels.columns.difference(labels)
+        
+        true_sel = np.array(df_true_labels.loc[:, labels],dtype=bool)
+        true_not_sel = np.array(df_true_labels.loc[:, not_labels], dtype=bool)
+        pred_sel = np.array(df_predicted_labels.loc[:, labels],dtype=bool)
+        pred_not_sel = np.array(df_predicted_labels.loc[:, not_labels], dtype=bool)
+        
+        true_mask = np.logical_and(np.all(true_sel, axis=1),np.all(np.logical_not(true_not_sel), axis=1))
+        pred_mask = np.logical_and(np.all(pred_sel, axis=1),np.all(np.logical_not(pred_not_sel), axis=1))
+
+        # get outliers
+        outlier_mask_local = (np_predicted_labels < 0)[true_mask,0]
+        
+        pred_mask = pred_mask[np.logical_not(outlier_mask)]
+        true_mask = true_mask[np.logical_not(outlier_mask)]
+
+        n_outlier_local = np.sum(outlier_mask_local)
+        
+        # ture positives
+        n_true_pos = np.sum(np.logical_and(pred_mask, true_mask))
+        n_true_neg = np.sum(np.logical_and(np.logical_not(pred_mask), np.logical_not(true_mask)))
+        n_false_pos = np.sum(np.logical_and(pred_mask, np.logical_not(true_mask)))
+        n_false_neg = np.sum(np.logical_and(np.logical_not(pred_mask), true_mask))
+        
+        # stats
+        if n_true_pos + n_false_pos != 0:
+            recall = (n_true_pos) / (n_true_pos + n_false_neg) # = sensitivey / TPR
+        else:
+            recall = "No positives"
+
+        if n_true_pos + n_false_pos != 0:
+            precision = (n_true_pos) / (n_true_pos + n_false_pos)
+        else:
+            precision = "No pos predictions"
+        
+        if n_true_neg + n_false_pos != 0:
+            specificity = (n_true_neg) / (n_true_neg + n_false_pos) # = selectivity / TNR
+        else:
+            specificity = "No negatives"
+
+        accuracy = (n_true_pos + n_true_neg) / (n_false_pos + n_true_pos + n_false_neg + n_true_neg)
+
+        if isinstance(specificity, str) or isinstance(recall, str):
+            balanced_accuracy = "No evaluation possible"
+        else:
+            balanced_accuracy = (specificity + recall) / 2
+
+        if isinstance(precision,str) or isinstance(recall,str):
+            f1 = "No evaluation possible"
+        else:
+            f1 = 2 * (precision * recall) / (precision + recall)
+
+
+    
+        print(f'Label combination {labels}:')
+        print(f'n outliers: {n_outlier_local}, n_true_pos: {n_true_pos}')
+        if(verbosity >= 2):
+            print(f'Total TN (True Negatives): {n_true_neg}')
+            print(f'Total TP (True Positives): {n_true_pos}')
+            print(f'Total FN (False Negatives): {n_false_neg}')
+            print(f'Total FP (False Positives): {n_false_pos}')
+        if(verbosity >= 1):
+            print(f'Precision (TP / (TP + FP)): {precision}')
+            print(f'Recall / TPR (TP / (TP + FN)): {recall}')
+            print(f'Specificity / TNR (TN / (TN + FP)): {specificity}')
+            print(f'Accuracy ((TP + TN) / (P + N)): {accuracy}')
+            print(f'F1 (2 * (precision * recall) / (precision + recall)): {f1}')
+        print(f'Balanced Accuracy: {balanced_accuracy}\n')
+
+    return
