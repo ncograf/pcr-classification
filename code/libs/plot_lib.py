@@ -206,6 +206,7 @@ def plot_pairwise_selection_bayesian(
                             selected_pairs : List[Tuple[str, str]],
                             axis_thresh : pd.DataFrame = None,
                             n_cols : int = 2,
+                            mask : npt.ArrayLike = None,
                             title : str = None,
                             ):
     
@@ -229,6 +230,9 @@ def plot_pairwise_selection_bayesian(
     assert ground_trouth.shape[0] == predictions.shape[0]
     assert ground_trouth.shape[0] == data_points.shape[0]
 
+    if mask is None:
+        mask = np.ones(data_points.shape[0], dtype=bool)
+
     # --------
     # plotting
     # --------
@@ -245,8 +249,8 @@ def plot_pairwise_selection_bayesian(
     for i, (col_one, col_two) in enumerate(selected_pairs): 
 
         # false positives = 1, false negatives = -1
-        true_labels = ground_trouth.loc[:,col_one].to_numpy()
-        pred_labels = predictions.loc[:,col_one].to_numpy()
+        true_labels = ground_trouth.loc[mask,col_one].to_numpy()
+        pred_labels = predictions.loc[mask,col_one].to_numpy()
         
         # create colors
         green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
@@ -262,10 +266,10 @@ def plot_pairwise_selection_bayesian(
         color_labels = negative_contributions + positive_contributions
 
         # get outliers
-        color_labels.iloc[pred_labels < 0] = np.array((255,255,0)) #'FFFF33'  ugly yellow
+        color_labels[pred_labels < 0] = np.array((1,1,0)) #'FFFF33'  ugly yellow
         
-        x_features = data_points.loc[:, col_one].to_numpy()
-        y_features = data_points.loc[:, col_two].to_numpy()
+        x_features = data_points.loc[mask, col_one].to_numpy()
+        y_features = data_points.loc[mask, col_two].to_numpy()
 
         ax[i // n_cols, i % n_cols].set_xlabel(col_one)
         ax[i // n_cols, i % n_cols].set_ylabel(col_two)
