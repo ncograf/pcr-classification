@@ -3,6 +3,7 @@ import pandas as pd
 import numpy.typing as npt
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
 from typing import List
+from icecream import ic
 from scipy.stats import multivariate_normal
 import transform_lib
 
@@ -127,16 +128,20 @@ class ThresholdMeanBayesianClassifier(BaseEstimator):
         self.means_whitened = self.whitening_transformer.fit_transform(self.means)
 
         self.X_transformed = self.whitening_transformer.transform(X_no_neg)
-        
+
         # store as well the transformed X for poltting
         self.X_all_transformed = self.whitening_transformer.transform(X)
 
         # make predictions
         predictions = self.get_cluster_based_basian_classification(self.X_transformed, self.clusters, self.axis_threshholds)
         
+        
         # add all negatives
-        all_predictions = np.zeros_like(X)
+        all_predictions = np.zeros_like(X, dtype=np.float32)
         all_predictions[self.mask] = predictions
+        self.n_cluster = len(np.unique(self.clusters))
+        self.all_clusters = np.ones(X.shape[0]) * self.n_cluster # int array
+        self.all_clusters[self.mask] = self.clusters
         
         # add labels to predictions
         self.predictions_df = pd.DataFrame(data = all_predictions, columns=self.prediction_axis)
@@ -239,6 +244,7 @@ class ThresholdMeanBayesianClassifier(BaseEstimator):
             numpy ndarray : per sample indicator array indicating for every threshold,
                 whether the sample is larger or smaller.
         """
+
         # get the clusters
         clusters = np.unique(cluster_labels)
         

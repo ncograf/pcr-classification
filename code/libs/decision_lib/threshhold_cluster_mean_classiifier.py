@@ -143,44 +143,6 @@ class ThresholdMeanClassifier(BaseEstimator):
         self.predictions_df = pd.DataFrame(data = all_predictions, columns=self.prediction_axis)
     
         return self.predictions_df
-    
-    def validate_labels(self, true_labels : npt.ArrayLike):
-        """Print some statistics such as false negatives / positives
-
-        Args:
-            true_labels (npt.ArrayLike): Ground truth to determine statistics
-        """
-        
-        np_true_labels = np.array(true_labels)
-        np_predicted_labels = np.array(self.predictions_df)
-        
-        assert np_true_labels.shape == np_predicted_labels.shape
-        
-        # errors: 1 false positive, -1 false negative
-        error_matrix = np_predicted_labels - np_true_labels
-        
-        # compute total statistics
-        abs_error_matrix = np.abs(error_matrix)
-        abs_error_rate = np.mean(abs_error_matrix)
-        abs_error_rate_class = np.mean(abs_error_matrix, axis=0).reshape(1,-1)
-        df_abs_error_rate_class = pd.DataFrame(data=abs_error_rate_class, columns=self.predictions_df.columns)
-
-        # false negatives
-        false_negatives = error_matrix == -1
-        false_neg_rate = np.mean(false_negatives)
-        false_neg_rate_class = np.mean(false_negatives, axis=0).reshape(1,-1)
-        df_false_neg_rate_class = pd.DataFrame(data=false_neg_rate_class, columns=self.predictions_df.columns)
-        
-        # false positives
-        false_positives = error_matrix == 1
-        false_pos_rate = np.mean(false_positives)
-        false_pos_rate_class = np.mean(false_positives, axis=0).reshape(1,-1)
-        df_false_pos_rate_class = pd.DataFrame(data=false_pos_rate_class, columns=self.predictions_df.columns)
-
-        
-        print(f'Total error rate: {abs_error_rate}\nTotal error per class:\n {df_abs_error_rate_class}\n\n')
-        print(f'False negative rate: {false_neg_rate}\nFalse negative rate per class:\n {df_false_neg_rate_class}\n\n')
-        print(f'False positive rate: {false_pos_rate}\nFalse negative rate per class:\n {df_false_pos_rate_class}\n\n')
 
 
     def get_cluster_means(self, clusters : npt.ArrayLike, data : npt.ArrayLike) -> npt.ArrayLike:
