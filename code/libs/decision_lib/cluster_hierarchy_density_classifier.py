@@ -8,7 +8,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import KernelDensity
 from typing import Dict, List, Tuple, Literal
 from icecream import ic
-
+import time
 
 class ClusterHierarchyDensityClassifier(BaseEstimator):
 
@@ -20,6 +20,7 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
                  contamination : float = 0.001,
                  negative_range: float = 0.9,
                  outliers : bool = True,
+                 density_quantile : float = 0.05,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']):
         """Initialize classifier with important parameters
 
@@ -41,6 +42,8 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
             contaminaton (float, optional): Ratio of outliers in the data. Defaults to 0.001.
             negative_range (float, optional): The range of datapoints (relative to max of negative control) to be considered negative without further computations
             outlier (bool, optional): Flag indicating if outlier should be detected, note that some cluster algorithms do this automatically. Default True.
+            desnity_quantile (float, optional): Quantile in [0,1] of positive / negative points for which to compute densities. 
+                100-density_quantile will percent will be assigned probaiblity 1 or 0 based on the precomputed labels.
             prediction_axis (List[str], optional): Assigns labels to the prediction axis. Defaults to ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'].
         """
         
@@ -53,15 +56,18 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
         self.eps = eps
         self.contamination = contamination
         self.get_outlier = outliers
+        self.denstiy_quantile = density_quantile * 100
         
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
+                verbose : bool = False,
                 ) -> pd.DataFrame:
         """Assigns a list of true / false indicators for each input in X
 
         Args:
             X (npt.ArrayLike): Samples to be classified
             y (npt.ArrayLike, optional): Ignored. Defaults to None.
+            verbose (boo, optional): Defaults to None.
 
         Returns:
             pd.DataFrame: Indicators for each label
@@ -72,41 +78,76 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
         
         # remove points in negative control range
         self.X = X
+        start_negatives = time.time()
         X_no_neg = self.negative_remover.transform(X)
         self.No_neg_mask = self.negative_remover.mask
+        time_negative = time.time() - start_negatives
+        if verbose:
+            print(f"Time to remove Negatives: {time_negative} seconds.")
         
         # remove outliers and create clusters
+        start_clustering = time.time()
         cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg, self.cluster_algorithm, contamination=self.contamination, get_outliers=self.get_outlier)
         self.cluster_labels = np.zeros_like(self.No_neg_mask, dtype=int)
         self.cluster_labels[self.No_neg_mask] = cluster_labels_no_neg
         self.cluster_labels[np.logical_not(self.No_neg_mask)] = np.max(cluster_labels_no_neg) + 1 # negative control range is last cluster
         self.cluster_dict : Dict[int, transform_lib.Cluster] = self.split_clusters(data=self.X,labels=self.cluster_labels)
+        time_clutering = time.time() - start_clustering
+        if verbose:
+            print(f"Time for Clustering: {time_clutering} seconds.")
+        
         
         # transform data accoring to clusters
+        start_whitening = time.time()
         cluster_dict_no_outlier = list(self.cluster_dict.keys())
         if -1 in cluster_dict_no_outlier:
             cluster_dict_no_outlier.remove(-1)
         cluster_means_no_outlier = np.stack([self.cluster_dict[k].mean for k in cluster_dict_no_outlier], axis=0)
         self.whitening_transformer.fit(cluster_means_no_outlier)
         self.X_transformed = self.whitening_transformer.transform(self.X)
+        time_whitening = time.time() - start_whitening
+        if verbose:
+            print(f"Time for Whitening: {time_whitening} seconds.")
 
         # add transformed properties to clusters
+        start_cluster_features = time.time()
         self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
+        time_cluster_features = time.time() - start_cluster_features
+        if verbose:
+            print(f"Time for Cluster Features: {time_cluster_features} seconds.")
         
         # make cluster predictions
+        start_prediction = time.time()
         self.cluster_dict = self.predict_cluster_labels(self.X_transformed, clusters=self.cluster_dict, eps=self.eps)
 
         # generate label predicitions
         self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
         self.predictions[self.cluster_labels < 0,:] = -1
+        time_predictions = time.time() - start_prediction
+        if verbose:
+            print(f"Time for Predictions: {time_predictions} seconds.")
 
         # add covariances and only keep clusters which have a invertable covariance
-        self.cluster_dict = self.get_cluster_covs(self.X, self.cluster_dict)
+        start_cluster_features = time.time()
+        #self.cluster_dict = self.get_cluster_covs(self.X, self.cluster_dict)
+        time_cluster_features = time.time() - start_cluster_features
+        if verbose:
+            print(f"Time for Cluster Features (2): {time_cluster_features} seconds.")
         
         # compute point probabilities
+        start_build_density = time.time()
         self.kernel_density : List[Tuple[KernelDensity]] = self.compute_density(self.cluster_dict, self.X_transformed, mask=self.No_neg_mask)
-        self.probabilities = self.compute_probs(self.kernel_density, self.X_transformed, mask=self.No_neg_mask)
+        time_build_density = time.time() - start_build_density
+        if verbose:
+            print(f"Time to build Density estimation: {time_build_density} seconds.")
+
+        start_compute_density = time.time()
+        self.probabilities = self.compute_probs(self.kernel_density, self.X_transformed, mask=self.No_neg_mask,
+                                                predictions=self.predictions, quantile=self.denstiy_quantile)
         self.probabilities[self.cluster_labels < 0,:] = -1
+        time_compute_density = time.time() - start_compute_density
+        if verbose:
+            print(f"Time to compute point probabilies: {time_compute_density} seconds.")
         
         # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
@@ -144,6 +185,9 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
         # mask data
         data_pos_mask = np.einsum('kl,k->kl',data_pos_mask, mask)
         data_neg_mask = np.einsum('kl,k->kl',data_neg_mask, mask)
+        
+        # compute kernel width
+        bandwidth = np.min(np.max(data,axis=0)- np.min(data,axis=0)) * 0.18
 
         n_pos = np.sum(data_pos_mask, axis=0)
         n_neg = np.sum(data_neg_mask, axis=0)
@@ -155,13 +199,11 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
             pos_mask = np.random.choice(a=[True, False], p=[p_pos[d], 1 - p_pos[d]], replace=True, size=pos_data.shape[0])
             neg_mask = np.random.choice(a=[True, False], p=[p_neg[d], 1 - p_neg[d]], replace=True, size=neg_data.shape[0])
             pos_density = KernelDensity(kernel=kernel,
-                                        bandwidth="silverman",
-                                        leaf_size=avg_sample_points // 10,
+                                        bandwidth=bandwidth,
                                         rtol=1,
                                         ).fit(pos_data[pos_mask,:])
             neg_density = KernelDensity(kernel=kernel,
-                                        bandwidth="silverman",
-                                        leaf_size=avg_sample_points // 10,
+                                        bandwidth=bandwidth,
                                         rtol=1,
                                         ).fit(neg_data[neg_mask,:])
             densites.append((pos_density, neg_density))
@@ -174,26 +216,46 @@ class ClusterHierarchyDensityClassifier(BaseEstimator):
                       densities : List[Tuple[KernelDensity, KernelDensity]],
                       data : npt.ArrayLike,
                       mask : npt.ArrayLike = None,
+                      predictions : npt.ArrayLike = None,
+                      quantile : float = 3,
                       ) -> npt.NDArray:
         """Get from cluster prediction to point probabilites using the cluster assignments
 
         Args:
             densities (List[KernelDensity, KernelDensity]]): density estimations
             data (npt.ArrayLike): Data points used for data shape
+            mask (npt.ArrayLike, optional): Mask datapoints, will be assigned density 0. Defaults to None.
+            predictions (npt.ArrayLike, optional): Points greater than lowest negative prediction are considered positive.
+                Points smaller than lowest positive predition are cosidered negative used for speedup. Defaults to None.
+            quantile (float, optional): quantile of positive / negative labels to estimate density of
 
         Returns:
             NDArray: Predictions on points
         """
         if mask is None:
             mask = np.ones(data.shape[0], dtype=bool)
-
+        
+        if predictions is None:
+            max_neg = np.max(data, axis=0)
+            min_pos = np.min(data, axis=0)
+        else:
+            max_neg = np.nanpercentile(a=np.ma.masked_array(data=data, mask=~(predictions==0)).filled(fill_value=np.nan), q=100-quantile, axis=0)
+            min_pos = np.nanpercentile(a=np.ma.masked_array(data=data, mask=~(predictions==1)).filled(fill_value=np.nan), q=quantile, axis=0)
+       
+        strictly_neg_mask = data <= max_neg
+        strictly_pos_mask = data >= min_pos
+        
+        to_be_classified = ~strictly_neg_mask & ~strictly_pos_mask
+        
         data_prob = np.zeros_like(data, dtype=np.float32)
+        data_prob[strictly_pos_mask] = 1
         dim = data.shape[1]
         
         for d in range(dim):
-            pos_prob = np.exp(densities[d][0].score_samples(data[mask,:]))
-            neg_prob = np.exp(densities[d][1].score_samples(data[mask,:]))
-            data_prob[mask, d] = np.einsum('k,k->k', pos_prob, 1 / (pos_prob + neg_prob + 1e-10))
+            loc_mask = mask & to_be_classified[:,d]
+            pos_prob = np.exp(densities[d][0].score_samples(data[loc_mask,:]))
+            neg_prob = np.exp(densities[d][1].score_samples(data[loc_mask,:]))
+            data_prob[loc_mask, d] = np.einsum('k,k->k', pos_prob, 1 / (pos_prob + neg_prob + 1e-10))
         
         return data_prob
 

@@ -6,13 +6,19 @@ from itertools import combinations
 import transform_lib
 from icecream import ic
 
-def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 1):
+def validate_labels(df_true_labels : pd.DataFrame,
+                    df_predicted_labels : pd.DataFrame,
+                    mask : npt.ArrayLike = None,
+                    threshold=0.5,
+                    verbosity = 1):
     """Print some statistics such as false negatives / positives
 
     Args:
         true_labels (DataFrame): Ground truth to determine statistics
-        predicted_labels (DataFrame): Predictions based on some algorithm
+        predicted_labels (DataFrame): Predictions based on some algorithm can as well be probabilites 
+            (in this case we count contributions of variables)
         mask (array_like, optional): Selection of points. Defaults to None.
+        threshold (float, optional): Probability threshold in (0,1) above which to consider a sample positively classified. Defautls to 0.5.
         verbosity (int, optional): 0 -> balanced_accuracy, 1 -> stats, 2 -> stats + number of points in classes . Defaults to 0.
     """
     
@@ -27,15 +33,17 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     assert np_true_labels.shape == np_predicted_labels.shape
     assert (df_true_labels.columns == df_predicted_labels.columns).all()
     
-    # errors: 1 false positive, -1 false negative
-    error_matrix = np_predicted_labels - np_true_labels
+    # errors: [1,0] false positive, [-1,0] false negative
+    error_matrix = (np_predicted_labels - np_true_labels)
     
     # get outliers
     outlier_mask = (np_predicted_labels < 0)[:,0]
     outlier_rate = np.mean(outlier_mask)
     n_outlier = np.sum(outlier_mask)
     error_matrix = error_matrix[np.logical_not(outlier_mask),:]
-    np_true_labels_no_outliers = np_true_labels[np.logical_not(outlier_mask),:]
+
+    np_true_labels_no_out = np_true_labels[~outlier_mask,:]
+    np_pred_labels_no_out = np_predicted_labels[~outlier_mask,:]
     
     # n_points
     n_points = np.sum(np.logical_not(outlier_mask))
@@ -46,28 +54,40 @@ def validate_labels(df_true_labels : pd.DataFrame, df_predicted_labels : pd.Data
     abs_error_rate_class = np.mean(abs_error_matrix, axis=0).reshape(1,-1)
     df_abs_error_rate_class = pd.DataFrame(data=abs_error_rate_class, columns=df_predicted_labels.columns)
     
-    # true negatives
-    true_negatives = np.logical_and(error_matrix == 0, np_true_labels_no_outliers == 0)
-    n_true_negatives = np.sum(true_negatives)
-    n_true_neg_class = np.sum(true_negatives, axis=0).reshape(1,-1)
+    # true negatives (we only consider negatives in ground truth)
+    true_negatives =  (np_true_labels_no_out == 0) & (np_pred_labels_no_out < threshold)
+    assert true_negatives.shape == error_matrix.shape
+    score_true_neg = 1 - np_pred_labels_no_out.copy()
+    score_true_neg[~true_negatives] = 0
+    n_true_negatives = np.sum(score_true_neg)
+    n_true_neg_class = np.sum(score_true_neg, axis=0).reshape(1,-1)
     df_ture_neg_class = pd.DataFrame(data=n_true_neg_class, columns=df_predicted_labels.columns)
 
     # false negatives
-    false_negatives = error_matrix == -1
-    n_false_negatives = np.sum(false_negatives)
-    n_false_neg_class = np.sum(false_negatives, axis=0).reshape(1,-1)
+    false_negatives = (np_true_labels_no_out == 1) & (np_pred_labels_no_out < threshold) 
+    assert false_negatives.shape == error_matrix.shape
+    score_false_neg = 1 - np_pred_labels_no_out.copy()
+    score_false_neg[~false_negatives] = 0
+    n_false_negatives = np.sum(score_false_neg)
+    n_false_neg_class = np.sum(score_false_neg, axis=0).reshape(1,-1)
     df_false_neg_class = pd.DataFrame(data=n_false_neg_class, columns=df_predicted_labels.columns)
     
     # true positives
-    true_positives = np.logical_and(error_matrix == 0, np_true_labels_no_outliers == 1)
-    n_true_positives = np.sum(true_positives)
-    n_true_pos_class = np.sum(true_positives, axis=0).reshape(1,-1)
+    true_positives = (np_true_labels_no_out == 1) & (np_pred_labels_no_out >= threshold)
+    assert true_positives.shape == error_matrix.shape
+    score_true_pos = np_pred_labels_no_out.copy()
+    score_true_pos[~true_positives] = 0
+    n_true_positives = np.sum(score_true_pos)
+    n_true_pos_class = np.sum(score_true_pos, axis=0).reshape(1,-1)
     df_true_pos_class = pd.DataFrame(data=n_true_pos_class, columns=df_predicted_labels.columns)
     
     # false positives
-    false_positives = error_matrix == 1
-    n_false_positives = np.sum(false_positives)
-    n_false_pos_class = np.sum(false_positives, axis=0).reshape(1,-1)
+    false_positives = (np_true_labels_no_out == 0) & (np_pred_labels_no_out >= threshold)
+    assert false_positives.shape == error_matrix.shape
+    score_false_pos = np_pred_labels_no_out.copy()
+    score_false_pos[~false_positives] = 0
+    n_false_positives = np.sum(score_false_pos)
+    n_false_pos_class = np.sum(score_false_pos, axis=0).reshape(1,-1)
     df_false_pos_class = pd.DataFrame(data=n_false_pos_class, columns=df_predicted_labels.columns)
 
     # stats
@@ -194,7 +214,8 @@ def get_false_cluster_for_plotting(df_data_points : pd.DataFrame,
 
     return data, predictions, ground_truth
     
-def validate_combinations(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None, verbosity = 0):
+def validate_combinations(df_true_labels : pd.DataFrame, df_predicted_labels : pd.DataFrame, mask : npt.ArrayLike = None,
+                          threshold : float = 0.5, verbosity = 0):
     """Print some statistics for all combinations of diseases
 
     Args:
