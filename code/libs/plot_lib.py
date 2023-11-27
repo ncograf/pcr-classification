@@ -208,6 +208,7 @@ def plot_pairwise_selection_bayesian(
                             n_cols : int = 2,
                             mask : npt.ArrayLike = None,
                             title : str = None,
+                            save_path : str = None
                             ):
     
     # check least requrements
@@ -280,8 +281,10 @@ def plot_pairwise_selection_bayesian(
     if not title is None:
         fig.subplots_adjust(top=0.9)
         fig.suptitle(title, fontsize=24)
-    plt.show()
-
+    if not save_path:
+        plt.show()
+    else:
+        plt.savefig(save_path)
 
 def plot_pairwise_selection_label(data_points : pd.DataFrame, 
                                   selected_pairs : List[Tuple[str, str]],
