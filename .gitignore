@@ -3,3 +3,4 @@ Data
 Data.zip
 .vscode
 __pycache__
+code/electron-flask-app/node_modules

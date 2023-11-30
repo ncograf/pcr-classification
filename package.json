@@ -1,0 +1,15 @@
+{
+  "name": "dslab",
+  "version": "1.0.0",
+  "description": "The folder Data is not tracked by Git and (initially) just contains a copy of the Data folder available at [Data Shared by Miss McLeod](https://drive.switch.ch/index.php/s/Dk9O9BXu0drKvqU). In the code it would hence be an advantage to use relative paths.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^27.1.2"
+  }
+}
