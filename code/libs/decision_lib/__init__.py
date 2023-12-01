@@ -12,12 +12,14 @@ from decision_lib.cluster_hierarchy_mean_classifier import ClusterHierarchyMeanC
 from decision_lib.cluster_hierarchy_density_classifier import ClusterHierarchyDensityClassifier
 from decision_lib.cluster_relative_hierarchy_mean_classifier import ClusterRelativeHierarchyMeanClassifier
 from decision_lib.cluster_relative_hierarchy_mean_density_classifier import ClusterRelativeHierarchyMeanDensityClassifier
+from decision_lib.whitnes_density_classifier import WhitnesDensityClassifier
 
 __all__ = ["ThresholdClassifier",
            "ThresholdMeanClassifier",
            "ThresholdMeanBayesianClassifier",
            "ClusterHierarchyMeanClassifier",
            "ClusterHierarchyDensityClassifier",
-           "ClusterRelativeHierarchyMeanClassifier"
-           "ClusterRelativeHierarchyMeanDenstiyClassifier"
+           "ClusterRelativeHierarchyMeanClassifier",
+           "ClusterRelativeHierarchyMeanDenstiyClassifier",
+           "WhitnesDensityClassifier"
              ]
