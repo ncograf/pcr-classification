@@ -2,6 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum
 from sklearn.base import BaseEstimator, TransformerMixin
+from typing import Dict, List
 
 class Cluster():
     
@@ -11,7 +12,8 @@ class Cluster():
                  ):
         loc_data = np.array(data)[mask,:]
 
-        self.labels = np.zeros(loc_data.shape[1])
+        n_dim = loc_data.shape[1]
+        self.labels = np.zeros(n_dim)
 
         # untransformed data
         self.mask = mask
@@ -20,6 +22,12 @@ class Cluster():
         self.min = np.min(loc_data, axis=0)
         self.cov = None
         self.dist = None
+        self.mean : npt.NDArray = np.mean(loc_data, axis=0)
+        self.max : npt.NDArray = np.max(loc_data, axis=0)
+        self.min : npt.NDArray = np.min(loc_data, axis=0)
+        self.hierarchy_probs : npt.NDArray = np.zeros(n_dim)
+        self.comparotor_probs : Dict[int, npt.NDArray] = {}
+        self.active_probs : npt.NDArray = np.zeros(n_dim)
         
         # statistics
         self.n = np.sum(self.mask)
