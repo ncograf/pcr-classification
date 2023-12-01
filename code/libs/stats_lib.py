@@ -118,7 +118,7 @@ def compute_relative_uncertainty(concentration_min_stock : float, concentration_
     """
     concentration_diff = (concentration_max_stock - concentration_min_stock)
     concentration = (concentration_max_stock + concentration_min_stock) / 2
-    uncertainty = concentration_diff / concentration / 2
+    uncertainty = concentration_diff / (concentration * 2 + 1e-15)
     return uncertainty
 
 
@@ -144,7 +144,10 @@ def compute_separability_score(np_data : npt.NDArray, np_labels : npt.NDArray) -
         Tuple[float, float]: The two methods above it the listed order
     """
     
-    chs_score = metrics.calinski_harabasz_score(np_data,np_labels)
-    db_score = metrics.davies_bouldin_score(np_data, np_labels)
+    db_score = np.nan
+    chs_score = np.nan
+    if len(np.unique(np_labels)) > 1:
+        chs_score = metrics.calinski_harabasz_score(np_data,np_labels)
+        db_score = metrics.davies_bouldin_score(np_data, np_labels)
     
     return chs_score, db_score

@@ -28,6 +28,7 @@ class Cluster():
         self.hierarchy_probs : npt.NDArray = np.zeros(n_dim)
         self.comparotor_probs : Dict[int, npt.NDArray] = {}
         self.active_probs : npt.NDArray = np.zeros(n_dim)
+        self.whitness = np.ones(n_dim) * (-2)
         
         # statistics
         self.n = np.sum(self.mask)

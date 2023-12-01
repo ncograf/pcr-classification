@@ -91,28 +91,28 @@ def validate_labels(df_true_labels : pd.DataFrame,
     df_false_pos_class = pd.DataFrame(data=n_false_pos_class, columns=df_predicted_labels.columns)
 
     # stats
-    precision = (n_true_positives) / (n_true_positives + n_false_positives)
-    precision_class = n_true_pos_class / (n_true_pos_class + n_false_pos_class)
+    precision = (n_true_positives) / (n_true_positives + n_false_positives + 1e-15)
+    precision_class = n_true_pos_class / (n_true_pos_class + n_false_pos_class + 1e-15)
     df_precision_class = pd.DataFrame(data=precision_class, columns=df_predicted_labels.columns)
 
-    recall = (n_true_positives) / (n_true_positives + n_false_negatives) # = sensitivey / TPR
-    recall_class = n_true_pos_class / (n_true_pos_class + n_false_neg_class)
+    recall = (n_true_positives) / (n_true_positives + n_false_negatives + 1e-15) # = sensitivey / TPR
+    recall_class = n_true_pos_class / (n_true_pos_class + n_false_neg_class + 1e-15)
     df_recall_class = pd.DataFrame(data=recall_class, columns=df_predicted_labels.columns)
     
-    specificity = (n_true_negatives) / (n_true_negatives + n_false_positives) # = selectivity / TNR
-    specificity_class = n_true_neg_class / (n_true_neg_class + n_false_pos_class)
+    specificity = (n_true_negatives) / (n_true_negatives + n_false_positives + 1e-15) # = selectivity / TNR
+    specificity_class = n_true_neg_class / (n_true_neg_class + n_false_pos_class + 1e-15)
     df_specificity_class = pd.DataFrame(data=specificity_class, columns=df_predicted_labels.columns)
 
-    accuracy = (n_true_positives + n_true_negatives) / (n_false_positives + n_true_positives + n_false_negatives + n_true_negatives)
-    accuracy_class = (n_true_pos_class + n_true_neg_class) / (n_false_pos_class + n_true_pos_class + n_false_neg_class + n_true_neg_class)
+    accuracy = (n_true_positives + n_true_negatives) / (n_false_positives + n_true_positives + n_false_negatives + n_true_negatives + 1e-15)
+    accuracy_class = (n_true_pos_class + n_true_neg_class) / (n_false_pos_class + n_true_pos_class + n_false_neg_class + n_true_neg_class + 1e-15)
     df_accuracy_class = pd.DataFrame(data=accuracy_class, columns=df_predicted_labels.columns)
 
     balanced_accuracy = (specificity + recall) / 2
     balanced_accuracy_class = (specificity_class + recall_class) / 2
     df_balanced_accuracy_class = pd.DataFrame(data=balanced_accuracy_class, columns=df_predicted_labels.columns)
 
-    f1 = 2 * (precision * recall) / (precision + recall)
-    f1_class = 2 * (precision_class * recall_class) / (precision_class + recall_class)
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-15)
+    f1_class = 2 * (precision_class * recall_class) / (precision_class + recall_class + 1e-15)
     df_f1_class = pd.DataFrame(data=f1_class, columns=df_predicted_labels.columns)
 
     
@@ -275,21 +275,21 @@ def validate_combinations(df_true_labels : pd.DataFrame, df_predicted_labels : p
         
         # stats
         if n_true_pos + n_false_pos != 0:
-            recall = (n_true_pos) / (n_true_pos + n_false_neg) # = sensitivey / TPR
+            recall = (n_true_pos) / (n_true_pos + n_false_neg + 1e-15) # = sensitivey / TPR
         else:
             recall = "No positives"
 
         if n_true_pos + n_false_pos != 0:
-            precision = (n_true_pos) / (n_true_pos + n_false_pos)
+            precision = (n_true_pos) / (n_true_pos + n_false_pos + 1e-15)
         else:
             precision = "No pos predictions"
         
         if n_true_neg + n_false_pos != 0:
-            specificity = (n_true_neg) / (n_true_neg + n_false_pos) # = selectivity / TNR
+            specificity = (n_true_neg) / (n_true_neg + n_false_pos + 1e-15) # = selectivity / TNR
         else:
             specificity = "No negatives"
 
-        accuracy = (n_true_pos + n_true_neg) / (n_false_pos + n_true_pos + n_false_neg + n_true_neg)
+        accuracy = (n_true_pos + n_true_neg) / (n_false_pos + n_true_pos + n_false_neg + n_true_neg + 1e-15)
 
         if isinstance(specificity, str) or isinstance(recall, str):
             balanced_accuracy = "No evaluation possible"
