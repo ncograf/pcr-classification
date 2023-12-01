@@ -2,6 +2,7 @@
 Data
 Data.zip
 .vscode
+.ipynb_checkpoints
 __pycache__
 code/electron-flask-app/node_modules
 code/electron-flask-app/.gitkeep
