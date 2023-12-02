@@ -5,8 +5,7 @@ import numpy.typing as npt
 import transform_lib
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
 from sklearn.ensemble import IsolationForest
-from sklearn.neighbors import KernelDensity
-from typing import Dict, List, Tuple, Literal, Callable, ParamSpec, TypeVar
+from typing import Dict, List, Tuple, Callable, ParamSpec, TypeVar
 from icecream import ic
 import warnings
 import time
@@ -50,7 +49,6 @@ class WhitnesDensityClassifier(BaseEstimator):
                  contamination : float = 0.01,
                  negative_range: float = 0.9,
                  outliers : bool = True,
-                 density_quantile : float = 0.5,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
                  verbose = False):
         """Initialize classifier with important parameters
@@ -87,8 +85,8 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.eps = eps
         self.contamination = contamination
         self.get_outlier = outliers
-        self.denstiy_quantile = density_quantile * 100
         self.verbose = verbose
+        self.thresh = 0.5
 
         
     def predict(self, X : npt.ArrayLike,
@@ -147,15 +145,8 @@ class WhitnesDensityClassifier(BaseEstimator):
                                                         zero_dimensions=self.neg_dimensions)
 
         # generate label predicitions
-        self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
+        self.probabilities, self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X, thresh=self.thresh)
         self.predictions[self.cluster_labels < 0,:] = -1
-        
-        # compute point probabilities
-        self.kernel_density : List[Tuple[KernelDensity]] = self.compute_density(self.cluster_dict, self.X_transformed, mask=self.No_neg_mask)
-
-        self.probabilities = self.compute_probs(self.kernel_density, self.X_transformed, mask=self.No_neg_mask,
-                                                predictions=self.predictions, quantile=self.denstiy_quantile)
-        self.probabilities[self.cluster_labels < 0,:] = -1
         
         # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
@@ -163,140 +154,29 @@ class WhitnesDensityClassifier(BaseEstimator):
     
         return self.predictions_df
     
-    @print_time("compute density")
-    def compute_density(self,
-                        clusters : Dict[int, transform_lib.Cluster],
-                        data : npt.ArrayLike,
-                        kernel : Literal['gaussian', 'epanechnikov'] = 'gaussian',
-                        mask : npt.ArrayLike = None,
-                        ) -> List[Tuple[KernelDensity]]:
-        """Compute distributions for postives and negatives
-
-        Args:
-            clusters (Dict[int, transform_lib.Cluster]): Clusters, containing labels
-            data (npt.ArrayLike): Data points
-
-        Returns:
-            List[Tuple[KernelDensity]]: 
-        """
-        if mask is None:
-            mask = np.ones(data.shape[0], dtype=bool)
-
-        densites = []
-        dim = data.shape[1]
-        avg_sample_points = 2**dim * 5 # curse of dimensionality is eliminated at the cost of scalability
-        data_pos_mask = np.zeros_like(data, dtype=bool)
-        data_neg_mask = np.zeros_like(data, dtype=bool)
-        for k in clusters.keys():
-            data_pos_mask = np.logical_or(np.einsum('k,l->kl',clusters[k].mask,clusters[k].labels), data_pos_mask)
-            data_neg_mask = np.logical_or(np.einsum('k,l->kl',clusters[k].mask,np.logical_not(clusters[k].labels)), data_neg_mask)
-            
-        # mask data
-        data_pos_mask = np.einsum('kl,k->kl',data_pos_mask, mask)
-        data_neg_mask = np.einsum('kl,k->kl',data_neg_mask, mask)
-        
-        # compute kernel width
-        bandwidth = np.min(np.max(data,axis=0)- np.min(data,axis=0)) * 0.18
-
-        n_pos = np.sum(data_pos_mask, axis=0)
-        n_neg = np.sum(data_neg_mask, axis=0)
-        p_pos = np.clip(avg_sample_points / (n_pos + 1e-15), a_min=0, a_max=1)
-        p_neg = np.clip(avg_sample_points / (n_neg + 1e-15), a_min=0, a_max=1)
-        for d in range(dim):
-            pos_data = data[data_pos_mask[:,d],:]
-            neg_data = data[data_neg_mask[:,d],:]
-            pos_mask = np.random.choice(a=[True, False], p=[p_pos[d], 1 - p_pos[d]], replace=True, size=pos_data.shape[0])
-            neg_mask = np.random.choice(a=[True, False], p=[p_neg[d], 1 - p_neg[d]], replace=True, size=neg_data.shape[0])
-            if not np.sum(pos_mask) == 0:
-                pos_density = KernelDensity(kernel=kernel,
-                                            bandwidth=bandwidth,
-                                            rtol=1,
-                                            ).fit(pos_data[pos_mask,:])
-            else:
-                pos_density = ZeroDensity()
-            
-            if not np.sum(neg_mask) == 0:
-                neg_density = KernelDensity(kernel=kernel,
-                                            bandwidth=bandwidth,
-                                            rtol=1,
-                                            ).fit(neg_data[neg_mask,:])
-            else: 
-                neg_density = ZeroDensity()
-            densites.append((pos_density, neg_density))
-
-        return densites
-
-
-    
-    @print_time("compute probabilies")
-    def compute_probs(self,
-                      densities : List[Tuple[KernelDensity, KernelDensity]],
-                      data : npt.ArrayLike,
-                      mask : npt.ArrayLike = None,
-                      predictions : npt.ArrayLike = None,
-                      quantile : float = 3,
-                      ) -> npt.NDArray:
-        """Get from cluster prediction to point probabilites using the cluster assignments
-
-        Args:
-            densities (List[KernelDensity, KernelDensity]]): density estimations
-            data (npt.ArrayLike): Data points used for data shape
-            mask (npt.ArrayLike, optional): Mask datapoints, will be assigned density 0. Defaults to None.
-            predictions (npt.ArrayLike, optional): Points greater than lowest negative prediction are considered positive.
-                Points smaller than lowest positive predition are cosidered negative used for speedup. Defaults to None.
-            quantile (float, optional): quantile of positive / negative labels to estimate density of
-
-        Returns:
-            NDArray: Predictions on points
-        """
-        if mask is None:
-            mask = np.ones(data.shape[0], dtype=bool)
-        
-        if predictions is None:
-            max_neg = np.max(data, axis=0)
-            min_pos = np.min(data, axis=0)
-        else:
-            with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', r'All-NaN (slice|axis) encountered')
-                max_neg = np.nanpercentile(a=np.ma.masked_array(data=data, mask=~(predictions==0)).filled(fill_value=np.nan), q=100-quantile, axis=0)
-                min_pos = np.nanpercentile(a=np.ma.masked_array(data=data, mask=~(predictions==1)).filled(fill_value=np.nan), q=quantile, axis=0)
-       
-        strictly_neg_mask = data <= max_neg
-        strictly_pos_mask = data >= min_pos
-        
-        to_be_classified = ~strictly_neg_mask & ~strictly_pos_mask
-        
-        data_prob = np.zeros_like(data, dtype=np.float32)
-        data_prob[strictly_pos_mask] = 1
-        dim = data.shape[1]
-        
-        for d in range(dim):
-            loc_mask = mask & to_be_classified[:,d]
-            if np.sum(loc_mask) > 0:
-                pos_prob = np.exp(densities[d][0].score_samples(data[loc_mask,:]))
-                neg_prob = np.exp(densities[d][1].score_samples(data[loc_mask,:]))
-                data_prob[loc_mask, d] = np.einsum('k,k->k', pos_prob, 1 / (pos_prob + neg_prob + 1e-10))
-        
-        return data_prob
-
     
     @print_time("predict labels")
     def predict_labels(self,
                         clusters : Dict[int, transform_lib.Cluster],
-                        data : npt.ArrayLike) -> npt.NDArray:
+                        data : npt.ArrayLike,
+                        thresh : float) -> npt.NDArray:
         """Get from cluster prediction to point predictions using the cluster assignments
 
         Args:
             clusters (Dict[int, Cluster]]): cluster dictonary containing labels and cluster masks
             data (npt.ArrayLike): Data points used for data shape
+            thresh (float): Threshold for data to be considered active or not
 
         Returns:
-            NDArray: Predictions on points
+            NDArray: Predicted probabilies on points
         """
         predictions = np.zeros_like(data)
+        probabilies = np.zeros_like(data, dtype=np.float32)
         for c in clusters.keys():
-            predictions[clusters[c].mask] = clusters[c].labels
-        return predictions
+            probabilies[clusters[c].mask] = clusters[c].active_probs
+            predictions[clusters[c].mask] = clusters[c].active_probs >= thresh
+
+        return probabilies, predictions
 
     def split_clusters(self, data : npt.ArrayLike, labels : npt.ArrayLike) -> Dict[int, transform_lib.Cluster]:
         """Get dictonariy of clusters
@@ -368,18 +248,35 @@ class WhitnesDensityClassifier(BaseEstimator):
         # A_{i,j,d} =  cluster_i - cluster_j in dimension d (where we compare midpoints)
         A = np.ones((n_clusters,n_clusters,dim), dtype=float)
         
-        def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, d : int) -> npt.NDArray:
+        def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, max_scale : npt.NDArray, d : int) -> npt.NDArray:
+            """Compute whether c2 in in the range of c1
+            
+            Args:
+                c1 (transform_lib.Cluster): Reference cluster
+                c2 (transform_lib.Cluster): Cluters to be decieded
+                max_dists (npt.NDArray): Maximal distances in each dimension
+                d (int): relevant dimension
+
+            Returns:
+                float: probability of c2 being in range of c1
+            """
             
             dist = c1.mean_t - c2.mean_t
+            smoothing = 0.6
+            scaled_avg_dist = dist / (dist[d] + 1e-15) * smoothing
+
+            # we want the sigmoid function to operate on [-8,8] scaled_avg_dist is in the range
+            # interbal around mean so we get
+            interval = 0.2
+            mean = smoothing * 1.3
+            scaled_avg_dist_ = (np.abs(scaled_avg_dist) - mean) / interval * 8
             
-            scaled_avg_dist = dist / (dist[d] + 1e-15)
-
-            in_range = np.abs(scaled_avg_dist) < 1.4
-
+            in_range = 1 / (1 + np.exp(scaled_avg_dist_))
+            
             d_mask = np.ones(dim, dtype=bool)
             d_mask[d] = 0
             
-            in_range = np.all(in_range[d_mask])
+            in_range = np.prod(in_range[d_mask])
 
             return in_range
         
@@ -388,8 +285,11 @@ class WhitnesDensityClassifier(BaseEstimator):
             # larger in the corresponding dimension
             dist = c1.mean_t - c2.mean_t
             dist_scaled = dist / (max_dists + 1e-15)
+            
+            interval = 1
+            dist_scaled_ = ((dist_scaled - eps) / interval * 6)[d]
 
-            gt = (dist_scaled >= eps)[d]
+            gt = 1 / (1 + np.exp(-dist_scaled_))
 
             return gt
             
@@ -413,10 +313,11 @@ class WhitnesDensityClassifier(BaseEstimator):
             for i in clusters_tmp.keys():
                 for d in range(dim):
                     if not zero_dimensions[d]:
-                        j_in_range = in_range(clusters_tmp[i], clusters_tmp[j], d)
+                        j_in_range = in_range(clusters_tmp[i], clusters_tmp[j],D, d)
                         i_gt_j = greater_than(clusters_tmp[i], clusters_tmp[j], eps, D, d)
-                        if i_gt_j and j_in_range:
-                            clusters[i].labels[d] = 1
+                        prob = j_in_range * i_gt_j
+                        if prob > clusters[i].active_probs[d]:
+                            clusters[i].active_probs[d] = prob
         
         return clusters
     
