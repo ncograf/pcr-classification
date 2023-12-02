@@ -319,3 +319,17 @@ def validate_combinations(df_true_labels : pd.DataFrame, df_predicted_labels : p
         print(f'Balanced Accuracy: {balanced_accuracy}\n')
 
     return
+
+def get_negative_percent(gt : pd.DataFrame, axis : List[str]):
+    
+    np_points = np.array(gt.loc[:,axis],dtype=bool)
+    negative_count = np.sum(np_points, axis=0)
+    negative_percent = negative_count / np_points.shape[0]
+    ic(negative_count.shape)
+    ic(negative_percent.shape)
+    ic(axis)
+    df_negative_count = pd.DataFrame(data=np.reshape(negative_count, (1,-1)), columns=axis)
+    df_negative_percent = pd.DataFrame(data=np.reshape(negative_percent, (1,-1)), columns=axis)
+    print(f'Positive count: \n{df_negative_count}')
+    print(f'Positive percent: \n{df_negative_percent}')
+    print(f'Negative percent: \n{1 - df_negative_percent}')

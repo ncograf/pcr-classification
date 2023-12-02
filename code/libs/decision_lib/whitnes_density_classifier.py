@@ -6,10 +6,35 @@ import transform_lib
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import KernelDensity
-from typing import Dict, List, Tuple, Literal
+from typing import Dict, List, Tuple, Literal, Callable, ParamSpec, TypeVar
 from icecream import ic
 import warnings
 import time
+
+def print_time(text : str):
+    """Decorator to print time necessary for the computation
+    of the function. The time will be printed along the
+    given `text`
+
+    Args:
+        text (str): Text to be printed with time
+    """
+    T = TypeVar("T")
+    P = ParamSpec("P")
+    def decorator(f : Callable[P, T]) -> Callable[P, T]:
+        def _inner(self, *args: P.args, **kwargs: P.kwargs) -> T:
+            start = time.time()
+            
+            # execute acual function call
+            result = f(self, *args, **kwargs)
+
+            elapsed = time.time() - start
+            elapsed = elapsed
+            if self.verbose:
+                print(f'Finished {text} in {elapsed} seconds')
+            return result
+        return _inner
+    return decorator
 
 class ZeroDensity():
     def score_samples(self, X):
@@ -26,7 +51,8 @@ class WhitnesDensityClassifier(BaseEstimator):
                  negative_range: float = 0.9,
                  outliers : bool = True,
                  density_quantile : float = 0.5,
-                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']):
+                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
+                 verbose = False):
         """Initialize classifier with important parameters
 
             The algorithm is based on the three assumption:
@@ -62,6 +88,8 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.contamination = contamination
         self.get_outlier = outliers
         self.denstiy_quantile = density_quantile * 100
+        self.verbose = verbose
+
         
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
@@ -83,76 +111,51 @@ class WhitnesDensityClassifier(BaseEstimator):
         
         # remove points in negative control range
         self.X = X
-        start_negatives = time.time()
         X_no_neg = self.negative_remover.transform(X)
         self.No_neg_mask = self.negative_remover.mask
-        time_negative = time.time() - start_negatives
-        if verbose:
-            print(f"Time to remove Negatives: {time_negative} seconds.")
+            
+        # compute zero dimensions
+        self.neg_dimensions, outliers = self.get_negative_dimensions(self.X, acceptable_contamination=0.001, maximal_expected_contamination=0.4)
         
         # remove outliers and create clusters
-        start_clustering = time.time()
-        cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg, self.cluster_algorithm, contamination=self.contamination, get_outliers=self.get_outlier)
+        cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg,
+                                                              self.cluster_algorithm,
+                                                              contamination=self.contamination,
+                                                              get_outliers=self.get_outlier)
+
         self.cluster_labels = np.zeros_like(self.No_neg_mask, dtype=int)
         self.cluster_labels[self.No_neg_mask] = cluster_labels_no_neg
         self.cluster_labels[np.logical_not(self.No_neg_mask)] = np.max(cluster_labels_no_neg) + 1 # negative control range is last cluster
         self.cluster_dict : Dict[int, transform_lib.Cluster] = self.split_clusters(data=self.X,labels=self.cluster_labels)
-        time_clutering = time.time() - start_clustering
-        if verbose:
-            print(f"Time for Clustering: {time_clutering} seconds.")
         
         
         # transform data accoring to clusters
-        start_whitening = time.time()
         cluster_dict_no_outlier = list(self.cluster_dict.keys())
         if -1 in cluster_dict_no_outlier:
             cluster_dict_no_outlier.remove(-1)
         cluster_means_no_outlier = np.stack([self.cluster_dict[k].mean for k in cluster_dict_no_outlier], axis=0)
         self.whitening_transformer.fit(cluster_means_no_outlier)
         self.X_transformed = self.whitening_transformer.transform(self.X)
-        time_whitening = time.time() - start_whitening
-        if verbose:
-            print(f"Time for Whitening: {time_whitening} seconds.")
 
         # add transformed properties to clusters
-        start_cluster_features = time.time()
         self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
-        time_cluster_features = time.time() - start_cluster_features
-        if verbose:
-            print(f"Time for Cluster Features: {time_cluster_features} seconds.")
         
         # make cluster predictions
-        start_prediction = time.time()
-        self.cluster_dict = self.predict_cluster_labels(self.X_transformed, clusters=self.cluster_dict, eps=self.eps)
+        self.cluster_dict = self.predict_cluster_labels(self.X_transformed,
+                                                        clusters=self.cluster_dict,
+                                                        eps=self.eps,
+                                                        zero_dimensions=self.neg_dimensions)
 
         # generate label predicitions
         self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
         self.predictions[self.cluster_labels < 0,:] = -1
-        time_predictions = time.time() - start_prediction
-        if verbose:
-            print(f"Time for Predictions: {time_predictions} seconds.")
-
-        # add covariances and only keep clusters which have a invertable covariance
-        start_cluster_features = time.time()
-        #self.cluster_dict = self.get_cluster_covs(self.X, self.cluster_dict)
-        time_cluster_features = time.time() - start_cluster_features
-        if verbose:
-            print(f"Time for Cluster Features (2): {time_cluster_features} seconds.")
         
         # compute point probabilities
-        start_build_density = time.time()
         self.kernel_density : List[Tuple[KernelDensity]] = self.compute_density(self.cluster_dict, self.X_transformed, mask=self.No_neg_mask)
-        time_build_density = time.time() - start_build_density
-        if verbose:
-            print(f"Time to build Density estimation: {time_build_density} seconds.")
 
-        start_compute_density = time.time()
         self.probabilities = self.compute_probs(self.kernel_density, self.X_transformed, mask=self.No_neg_mask,
                                                 predictions=self.predictions, quantile=self.denstiy_quantile)
         self.probabilities[self.cluster_labels < 0,:] = -1
-        time_compute_density = time.time() - start_compute_density
-        if verbose:
-            print(f"Time to compute point probabilies: {time_compute_density} seconds.")
         
         # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
@@ -160,6 +163,7 @@ class WhitnesDensityClassifier(BaseEstimator):
     
         return self.predictions_df
     
+    @print_time("compute density")
     def compute_density(self,
                         clusters : Dict[int, transform_lib.Cluster],
                         data : npt.ArrayLike,
@@ -196,8 +200,8 @@ class WhitnesDensityClassifier(BaseEstimator):
 
         n_pos = np.sum(data_pos_mask, axis=0)
         n_neg = np.sum(data_neg_mask, axis=0)
-        p_pos = np.clip(avg_sample_points / n_pos, a_min=0, a_max=1)
-        p_neg = np.clip(avg_sample_points / n_neg, a_min=0, a_max=1)
+        p_pos = np.clip(avg_sample_points / (n_pos + 1e-15), a_min=0, a_max=1)
+        p_neg = np.clip(avg_sample_points / (n_neg + 1e-15), a_min=0, a_max=1)
         for d in range(dim):
             pos_data = data[data_pos_mask[:,d],:]
             neg_data = data[data_neg_mask[:,d],:]
@@ -224,6 +228,7 @@ class WhitnesDensityClassifier(BaseEstimator):
 
 
     
+    @print_time("compute probabilies")
     def compute_probs(self,
                       densities : List[Tuple[KernelDensity, KernelDensity]],
                       data : npt.ArrayLike,
@@ -267,13 +272,15 @@ class WhitnesDensityClassifier(BaseEstimator):
         
         for d in range(dim):
             loc_mask = mask & to_be_classified[:,d]
-            pos_prob = np.exp(densities[d][0].score_samples(data[loc_mask,:]))
-            neg_prob = np.exp(densities[d][1].score_samples(data[loc_mask,:]))
-            data_prob[loc_mask, d] = np.einsum('k,k->k', pos_prob, 1 / (pos_prob + neg_prob + 1e-10))
+            if np.sum(loc_mask) > 0:
+                pos_prob = np.exp(densities[d][0].score_samples(data[loc_mask,:]))
+                neg_prob = np.exp(densities[d][1].score_samples(data[loc_mask,:]))
+                data_prob[loc_mask, d] = np.einsum('k,k->k', pos_prob, 1 / (pos_prob + neg_prob + 1e-10))
         
         return data_prob
 
     
+    @print_time("predict labels")
     def predict_labels(self,
                         clusters : Dict[int, transform_lib.Cluster],
                         data : npt.ArrayLike) -> npt.NDArray:
@@ -308,29 +315,19 @@ class WhitnesDensityClassifier(BaseEstimator):
 
         return clusters
 
-    def add_transformed(self, data_t: npt.ArrayLike, clusters : Dict[int,transform_lib.Cluster]) -> Dict[int, transform_lib.Cluster]:
+    @print_time("compute transformed features")
+    def add_transformed(self, data_t: npt.ArrayLike, clusters : Dict[int,transform_lib.Cluster], percentile = 0.01) -> Dict[int, transform_lib.Cluster]:
+        percentile = percentile * 100
         for k in clusters.keys():
             clusters[k].mean_t = np.mean(data_t[clusters[k].mask,:], axis=0)
             clusters[k].max_t = np.max(data_t[clusters[k].mask,:], axis=0)
             clusters[k].min_t = np.min(data_t[clusters[k].mask,:], axis=0)
+            clusters[k].low_perc_t = np.percentile(data_t[clusters[k].mask,:], axis=0, q=percentile)
+            clusters[k].high_perc_t = np.percentile(data_t[clusters[k].mask,:], axis=0, q=100-percentile)
         
         return clusters
-    
-    def get_cluster_covs(self, data : npt.ArrayLike, clusters : Dict[int, transform_lib.Cluster]) -> Dict[int, transform_lib.Cluster]:
-        new_clusters = {}
-        for k in clusters.keys():
-            loc_dat = (data[clusters[k].mask,:] - clusters[k].mean).T
-            cov = np.cov(loc_dat)
-            try:
-                normal = sp.multivariate_normal(clusters[k].mean, cov)
-                new_clusters[k] = clusters[k]
-                new_clusters[k].cov = cov
-                new_clusters[k].dist = normal
-            except:
-                pass
-        return new_clusters
-            
 
+    @print_time("compute clusters")
     def get_clusters_and_outlier(self, data : npt.ArrayLike, cluster_engine : ClusterMixin, get_outliers=True, contamination = 0.001) -> npt.NDArray:
 
         if get_outliers:
@@ -345,13 +342,18 @@ class WhitnesDensityClassifier(BaseEstimator):
         
         return labels
 
-    def predict_cluster_labels(self,data : npt.ArrayLike, clusters : Dict[int, transform_lib.Cluster], eps : float) -> Dict[int, transform_lib.Cluster]:
+    @print_time("predict cluster labels")
+    def predict_cluster_labels(self,data : npt.ArrayLike,
+                               clusters : Dict[int, transform_lib.Cluster],
+                               eps : float,
+                               zero_dimensions : npt.ArrayLike) -> Dict[int, transform_lib.Cluster]:
         """Predict labels for eac cluster and store them in the cluter dictionary
 
         Args:
             data (array_like): All data points
             clusters (Dict[int, Cluters]): Dict containing the clusters
             eps (float): factor for the minimal disance relative to the max cluter means
+            zero_dimensions (npt.ArrayLike): Indicator array for zero dimensions
 
         Returns:
             np.ndarray: Indicators for diseases present in each cluster
@@ -365,29 +367,147 @@ class WhitnesDensityClassifier(BaseEstimator):
 
         # A_{i,j,d} =  cluster_i - cluster_j in dimension d (where we compare midpoints)
         A = np.ones((n_clusters,n_clusters,dim), dtype=float)
+        
+        def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, d : int) -> npt.NDArray:
+            
+            dist = c1.mean_t - c2.mean_t
+            
+            scaled_avg_dist = dist / (dist[d] + 1e-15)
 
+            in_range = np.abs(scaled_avg_dist) < 1.4
+
+            d_mask = np.ones(dim, dtype=bool)
+            d_mask[d] = 0
+            
+            in_range = np.all(in_range[d_mask])
+
+            return in_range
+        
+        def greater_than(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, eps : float, max_dists : npt.NDArray, d : int) -> bool:
+
+            # larger in the corresponding dimension
+            dist = c1.mean_t - c2.mean_t
+            dist_scaled = dist / (max_dists + 1e-15)
+
+            gt = (dist_scaled >= eps)[d]
+
+            return gt
+            
+        
         for j in clusters_tmp.keys():
             for i in clusters_tmp.keys():
                 # mean_t is in the transformed data
                 dists = clusters_tmp[j].mean_t - clusters_tmp[i].mean_t
                 A[j,i] = dists
         
-        D = np.max(A, axis=(0,1)) - np.min(A, axis=(0,1))
+        D = np.max(A, axis=(0,1))
+        D = np.max(A, axis=(0,1))
         
         # let A_jid denote the directed distance cluster_j - cluster_i between midpoints in dimension d
         # let D_d denote the maximal distance between two clusters
         # cluster_i is considered active in dimension d iff
-        # \exists j : A_ijd > eps * D_d and A_ijd < -eps * D_d' \forall d' \neq d)
+        # \exists j : A_ijd > eps * D_d and A_ijd <= eps * D_d' \forall d' \neq d)
         # in words this requres c_i to be lareger in dimension c_j by at least some sparating distace
-        #       and it requires c_i to be within the range of c_j for the other dimensios
+        #       and it requires c_i to be in the range of c_j in all other dimensions
         for j in clusters_tmp.keys():
             for i in clusters_tmp.keys():
-                i_gt_j = A[i,j,:] / D
                 for d in range(dim):
-                    d_mask = np.ones(dim, dtype=bool)
-                    d_mask[d] = 0
-                    i_gt = i_gt_j[d] > eps
-                    i_leq_all = i_gt_j[d_mask] > 2 * eps * i_gt_j[d] / i_gt_j[d_mask]
-                    if i_gt and np.all(i_leq_all):
+                    if not zero_dimensions[d]:
+                        j_in_range = in_range(clusters_tmp[i], clusters_tmp[j], d)
+                        i_gt_j = greater_than(clusters_tmp[i], clusters_tmp[j], eps, D, d)
+                        if i_gt_j and j_in_range:
                             clusters[i].labels[d] = 1
+        
         return clusters
+    
+    
+    def assign_true_cluster_labels(self, df_gt : pd.DataFrame):
+        clusters = self.cluster_dict
+        for c in clusters.keys():
+            df_lab = df_gt.loc[clusters[c].mask, self.prediction_axis]
+            np_lab = np.array(df_lab,dtype=bool)
+            n_pt = clusters[c].n
+            active = np.sum(np_lab, axis=0) >= n_pt / 2
+            clusters[c].active = active
+
+    @print_time("negative dimensions")
+    def get_negative_dimensions(self,np_points : npt.NDArray,
+                                acceptable_contamination : float = 0.001,
+                                maximal_expected_contamination : float = 0.4) -> Tuple[npt.NDArray, npt.NDArray]:
+        """Get the dimensions in which the sample `np_point` is not contaminated
+        and as a bonuns get outliers
+        
+        How can we do this: The fundamental Idea is that most of the points are negative
+        in all dimensions (according the data we that was avilable while constructing
+        this algorithm the procentage of such points was between 85 and 100).
+        Moreover, the second obervation on which this algorithm is based, is that these
+        point (which are negative in all dimensions) do not have a large spread 
+        (in the data the spread of the negative data was around 10 - 20 percent of
+        the whole range of point values in samples with positively lavelled points)
+        
+        First the algorithm removes outliers and in fact it assumes to have
+        the precentile `acceptable contamination` of points to be outliers.
+        After this we call the sample without the outliers S.
+
+        We use the parameter
+        -> `maximal_expected_contamination` = mec
+        int the following
+        
+        For a sample S, lets only condier axis d and let r := max(S) - min(S) (in axis d).
+        Further let q \in \R be such that |{p \in S : p_d - min(S_d) < q}| = (1 - mec)|S|.
+        (The intuition here is that at least all points below q will be negatives).
+        Then we consider the axis d of S to be completely negative if
+        (q / r) >= (1 - mec) / 2.
+        
+        So we need the following assumptions on a sample S for this to work:
+            - In each dimension, less than `maximal_expected_contamination` * |S| points are
+                contaminated with the disease corresponding to dimension d.
+            - The distribution of the "negative" points in dimension d of sample |S|
+                is evenly distributed, more specifically: let N(S) be all "negative" points
+                of S in dimension d. Then let q (as above) be the span such that (1-mec)
+                points are contained in a range q. These points must then span more than
+                (1-mec) / 2 times the range spanned by N(S) in dimension d. 
+                Note that for uniformly distributed data we would expect
+                them to span (1-mec) the range and for normally distributed
+                data more that 0.5 as long as mec < 0.5. Here we expect 
+                the algorithm will work better the higher the procentile of 
+                netative points. Althought there would needs to be a 300% more positive
+                points such that this would have a serious negative effect.
+            - Lastly we assume that positive samples in dimension d have a higher value
+                than min(S_d) + 2 * p / (1 - mec). This is again a reasonable assumption
+                based on the data we have, as we have this value higher than 
+                min(S_d) + 6 * p / (1 - mec). 
+        
+
+        Args:
+            np_points (npt.NDArray): points to be inspected
+            acceptable_contamination (float, optional): Outliers which can be contaminated points
+                in a negative control for example. Defaults to 0.001.
+            maximal_expected_contamination (float, optional): Over all samples in a series
+                there should not be more than a quantile of this amount conatimated. Defaults to 0.4.
+
+        Returns:
+            Tuple[npt.NDArray, npt.NDArray]: Indicator array for each dimension to be only negative, 
+                outplier labels (-1 are outliers).
+        """
+        outlier_detector = IsolationForest(contamination=acceptable_contamination,
+                                            n_jobs=3,
+                                            max_samples=np_points.shape[0],
+                                            n_estimators=10)
+        outliers_labels = outlier_detector.fit_predict(np_points)
+        np_points_no_outlier = np_points[outliers_labels >= 0]
+        
+        # we consider a dimension to be zero if the 1 - maximal_expected_contamination
+        # covers more than (1 - maximal_expected_contamination) / 10 of the range (max - min)
+        s_max = np.max(np_points_no_outlier, axis=0)
+        s_min = np.min(np_points_no_outlier, axis=0)
+        r = s_max - s_min
+
+        mec = maximal_expected_contamination
+        q = np.percentile(np_points_no_outlier, 100 - 100 * mec, axis=0)
+        q = q - s_min
+        
+        # consider every dimensin to be zero as above
+        zero_dimensions = (q / r) * 2 >= (1 - mec)
+            
+        return zero_dimensions, outliers_labels

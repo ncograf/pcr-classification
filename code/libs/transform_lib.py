@@ -37,6 +37,8 @@ class Cluster():
         self.mean_t = None
         self.max_t = None
         self.min_t = None
+        self.low_perc_t = None
+        self.high_perc_t = None
 
 # possible classes for data whitening
 class Whitenings(Enum):
