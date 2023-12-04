@@ -313,3 +313,73 @@ def plot_pairwise_selection_label(data_points : pd.DataFrame,
 
     fig.tight_layout()
     plt.show()
+
+def plot_pairwise_selection_bayesian_no_gt(
+                            data_points : pd.DataFrame,
+                            predictions : pd.DataFrame,
+                            selected_pairs : List[Tuple[str, str]],
+                            axis_thresh : pd.DataFrame = None,
+                            n_cols : int = 2,
+                            mask : npt.ArrayLike = None,
+                            save_path : str = None,
+                            fig : plt.figure = None,
+                            ):
+    
+    # check least requrements
+    for (color_one, color_two) in selected_pairs:
+
+        assert color_two in data_points.columns
+        assert color_one in data_points.columns
+
+        assert color_two in predictions.columns
+        assert color_one in predictions.columns
+
+        if not axis_thresh  is None:
+            assert color_two in axis_thresh.columns
+            assert color_one in axis_thresh.columns
+
+    if mask is None:
+        mask = np.ones(data_points.shape[0], dtype=bool)
+
+    # --------
+    # plotting
+    # --------
+    
+    # check the number of plots to be created
+    n = len(selected_pairs)
+    n_rows = n // n_cols + (0 if n % n_cols == 0 else 1)
+    
+    fig, ax = plt.subplots(n_rows, n_cols, sharex=False, sharey=False)
+    fig.set_figheight(3 * n_rows)
+    fig.set_figwidth(5 * n_cols)
+    
+    # iterate over combinations for subplots
+    for i, (col_one, col_two) in enumerate(selected_pairs): 
+
+        # false positives = 1, false negatives = -1
+        pred_labels = predictions.loc[mask,col_one].to_numpy()
+        
+        # create colors
+        green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
+        green_value = np.einsum("i,j->ji", green, pred_labels)
+        black = np.array((0,0,0),dtype=np.float32) / 255 # black #000000
+        black_value = np.einsum("i,j->ji",black,  (1 - pred_labels))
+        color_labels =  green_value + black_value
+
+        # get outliers
+        color_labels[pred_labels < 0] = np.array((1,1,0)) #'FFFF33'  ugly yellow
+        
+        x_features = data_points.loc[mask, col_one].to_numpy()
+        y_features = data_points.loc[mask, col_two].to_numpy()
+
+        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
+        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+        ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
+        if not axis_thresh is None:
+            ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
+
+    fig.tight_layout()
+    if save_path:
+        plt.savefig(save_path)
+    
+    return fig

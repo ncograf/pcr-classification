@@ -171,9 +171,12 @@ class RemoveNegativeTransformer(BaseEstimator):
             negative_control (npt.ArrayLike): Negative contorl cluster based on which to select.
         """
 
-        self.neg_control = negative_control
-        self.max = np.max(negative_control, axis = 0)
-        self.range = range
+        if not negative_control is None:
+            self.neg_control = negative_control
+            self.max = np.max(negative_control, axis = 0)
+            self.range = range
+        else:
+            self.neg_control = None
     
     def transform(self, X : npt.ArrayLike, y : npt.ArrayLike = None) -> npt.ArrayLike:
         """Cuts out all the points which smaller that the maximum value in some axis of the
@@ -185,10 +188,17 @@ class RemoveNegativeTransformer(BaseEstimator):
         Returns:
             Tuple[npt.ArrayLike]: _description_
         """
-        assert self.neg_control.shape[1] == X.shape[1]
 
         # just take the maximum of the zero cluster
         self.X_full = X
+
+        if self.neg_control is None:
+            self.mask = np.ones(X.shape[0],dtype=bool)
+            self.X_out = X
+            return X
+
+        assert self.neg_control.shape[1] == X.shape[1]
+
         self.mask = np.any(X >= (self.max * self.range), axis = 1)
         self.X_out = X[self.mask]
         

@@ -64,6 +64,44 @@ def compute_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_
     df_results = pd.DataFrame.from_dict(df_results)
 
     return df_results
+
+def compute_short_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_treshhold : float, df_data : pd.DataFrame) -> pd.DataFrame:
+    """Compute statistics on given results. For each column in df_prbabilities the following statistics are computed
+
+    - Concentration: -4440 * log_10(1 - (#positve droplets) / (#total droplets))
+    - Separability score  Davies-Bouldin Index [1]
+    - Concentration relative uncertainty: (ConcentrationMaxStock - ConcentrationMinStock) / Concentration / 2
+    
+    [1]: D. L. Davies and D. W. Bouldin, "A Cluster Separation Measure,"
+    in IEEE Transactions on Pattern Analysis and Machine Intelligence,
+    vol. PAMI-1, no. 2, pp. 224-227, April 1979, doi: 10.1109/TPAMI.1979.4766909.
+
+    Args:
+        df_probabilites (pd.DataFrame): Dataframe with columns corresponding to diseases
+        min_threshhold (float): Threshhold for Concentration Stock Max
+        max_treshhold (float): Threshhold for Concentration Stock Min
+        df_data (pd.DataFrame): Data used for separability score (without labels)
+
+    Returns:
+        pd.DataFrame : Dataframe with the above mentioned statistics
+    """
+    all_results = compute_results(df_probabilites, min_threshhold, max_treshhold, df_data)
+    concentration = []
+    bd_score = []
+    rel_uncetainty = [] 
+    for col in df_probabilites.columns:
+        concentration.append(all_results.loc[0, compute_name(col, 'Concentration')])
+        bd_score.append(all_results.loc[0, compute_name(col, 'SeparabilityScore')])
+        rel_uncetainty.append(all_results.loc[0, compute_name(col, 'ConcentrationStock_RelativeUncertainty')])
+
+    df_all = {}
+    df_all["Disease"] = df_probabilites.columns
+    df_all["Concentration"] = concentration
+    df_all["Separability"] = bd_score
+    df_all["Uncertainty"] = rel_uncetainty
+    df_all = pd.DataFrame.from_dict(df_all)
+
+    return df_all
         
 
 def compute_name(prefix : str, name :str) -> str:

@@ -1,5 +1,8 @@
 import pandas as pd
-from typing import Dict, List
+from icecream import ic
+from typing import Dict, List, Tuple
+import numpy.typing as npt
+import numpy as np
 import re
 import pathlib
 import itertools
@@ -17,7 +20,6 @@ LABELS_LIST = ["IAV-M_POS",
              "SARS-N1_NEG",
              "SARS-N2_POS",
              "SARS-N2_NEG"]
-
 
 def load_dataset(labels : List[str] = None, datasets : List[str] = None, datafolder : str = "../Data") -> pd.DataFrame:
     """Loads data into a pandas DataFrame
@@ -230,3 +232,60 @@ def load_custom_dataset(files: List[List[str]], labels: List[str] ) -> pd.DataFr
             df_major = pd.concat((df_major, raw_data), axis=0)
     
     return df_major
+
+def load_raw_dataset(files: List[str]) -> Tuple[pd.DataFrame, Dict[str, npt.NDArray]]:
+    """Generate Dataframe with all the features and a mask for each individual file stored in a file with the correpsonding name
+
+    Args:
+        files (List[str]): List of Lists of filenames
+    
+    Exceptions:
+        FileNotFoundError: For given files not ending with .cvs or path related problems
+        KeyError: For files not containing the right colums.
+
+    Returns:
+        Tuple[pd.DataFrame, Dict[str, npt.NDArray]: Dataframe with one row for each point found in one of the files, Dictionarray containing files and corresponding masks
+    """
+    if len(files) <= 0:
+        raise FileNotFoundError("Error: No files provided.")
+    
+    df_list : List[pd.DataFrame] = []
+    for file in files:
+        
+        path = pathlib.Path(file)
+        
+        if not path.is_file():
+            raise FileNotFoundError(f"Error: {path} is not a file.")
+        
+        if not path.suffix == ".csv":
+            raise FileNotFoundError(f"Error: {path} is not a csv file.")
+        
+        col_pattern = "^Chan.*"
+        raw_data = pd.read_csv(str(path))
+        raw_data.rename(columns=lambda x : x.strip(), inplace=True)
+        
+        keep_cols = list(filter(re.compile(col_pattern).findall, raw_data.columns))
+        
+        df_list.append(raw_data.loc[:,keep_cols])
+        
+    # complete major df
+    cols = df_list[0].columns
+    
+    # reorder columns of all dataframes
+    start_indices = [0]
+    for i,df in enumerate(df_list):
+        try:
+            df = df.loc[:, cols]
+        except:
+            raise KeyError(f"File {files[i]} does not contain the needed columns: {cols.to_list}." +
+                           f"\n\nNote that we assume {files[0]} contains the right colums and we only consider columns which names start with 'Chan'")
+        start_indices.append(start_indices[len(start_indices)-1] + df.shape[0])
+    
+    df_major = pd.concat(df_list, axis=0)
+    file_masks : Dict[str, npt.NDArray] = {}
+    for i, file in enumerate(files):
+        mask = np.zeros(df_major.shape[0],dtype=bool)
+        mask[start_indices[i]:start_indices[i+1]] = True
+        file_masks[file] = mask
+    
+    return df_major, file_masks
