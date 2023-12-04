@@ -2,7 +2,7 @@
 name = "ds-lab"
 version = "0.1.0"
 description = ""
-authors = ["Nico Graf <nico.graf@math.ethz.ch>", "Gernot Zöcklein <gzoecklein@student.ethz.ch>, "Ivan Baburin <ivan.baburin@inf.ethz.ch>"]
+authors = ["Nico Graf <nico.graf@math.ethz.ch>", "Gernot Zöcklein <gzoecklein@student.ethz.ch>", "Ivan Baburin <ivan.baburin@inf.ethz.ch>"]
 readme = "README.md"
 packages = [
     {include = "*", from = "code/libs"}
@@ -17,6 +17,10 @@ scikit-learn = "^1.3.1"
 matplotlib = "^3.8.0"
 jupyter = "^1.0.0"
 icecream = "^2.1.3"
+customtkinter = "^5.2.1"
+ctkmessagebox = "^2.5"
+ctktable = "^0.8"
+pyinstaller = "^6.2.0"
 
 
 [build-system]
