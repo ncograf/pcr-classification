@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import pandas as pd
 import scipy.stats as sp
 import numpy.typing as npt
@@ -113,7 +114,7 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.No_neg_mask = self.negative_remover.mask
             
         # compute zero dimensions
-        self.neg_dimensions, outliers = self.get_negative_dimensions(self.X, acceptable_contamination=0.001, maximal_expected_contamination=0.4)
+        self.neg_dimensions, outliers = WhitnesDensityClassifier.get_negative_dimensions(self.X, acceptable_contamination=0.001, maximal_expected_contamination=0.4)
         
         # remove outliers and create clusters
         cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg,
@@ -147,6 +148,7 @@ class WhitnesDensityClassifier(BaseEstimator):
         # generate label predicitions
         self.probabilities, self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X, thresh=self.thresh)
         self.predictions[self.cluster_labels < 0,:] = -1
+        self.probabilities[self.cluster_labels < 0,:] = -1
         
         # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
@@ -244,81 +246,76 @@ class WhitnesDensityClassifier(BaseEstimator):
         clusters_tmp.pop(-1, None) # get rid of outliers
         n_clusters = len(clusters_tmp)
         dim = data.shape[1]
-
-        # A_{i,j,d} =  cluster_i - cluster_j in dimension d (where we compare midpoints)
-        A = np.ones((n_clusters,n_clusters,dim), dtype=float)
         
-        def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, max_scale : npt.NDArray, d : int) -> npt.NDArray:
+        def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, max_scale : npt.NDArray) -> npt.NDArray:
             """Compute whether c2 in in the range of c1
             
             Args:
                 c1 (transform_lib.Cluster): Reference cluster
                 c2 (transform_lib.Cluster): Cluters to be decieded
                 max_dists (npt.NDArray): Maximal distances in each dimension
-                d (int): relevant dimension
 
             Returns:
-                float: probability of c2 being in range of c1
+                npt.NDArray: probability of c2 being in range of c1
             """
             
             dist = c1.mean_t - c2.mean_t
             smoothing = 0.6
-            scaled_avg_dist = dist / (dist[d] + 1e-15) * smoothing
+            
+            # for each in row l we have the distances scaled by distance l
+            scaled_avg_dist = np.einsum('k,l -> lk', dist , 1 / (dist + 1e-15))
 
-            # we want the sigmoid function to operate on [-8,8] scaled_avg_dist is in the range
-            # interbal around mean so we get
             interval = 0.2
-            mean = smoothing * 1.3
-            scaled_avg_dist_ = (np.abs(scaled_avg_dist) - mean) / interval * 8
+            center = 1.3
+            scaled_avg_dist_ = ((np.abs(scaled_avg_dist) - center) * smoothing) / interval * 8
             
             in_range = 1 / (1 + np.exp(scaled_avg_dist_))
-            
-            d_mask = np.ones(dim, dtype=bool)
-            d_mask[d] = 0
-            
-            in_range = np.prod(in_range[d_mask])
+            np.fill_diagonal(in_range, 1)
+
+            in_range = np.prod(in_range, axis=1)
 
             return in_range
         
-        def greater_than(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, eps : float, max_dists : npt.NDArray, d : int) -> bool:
+        def greater_than(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, eps : float, max_dists : npt.NDArray) -> npt.NDArray:
 
             # larger in the corresponding dimension
             dist = c1.mean_t - c2.mean_t
             dist_scaled = dist / (max_dists + 1e-15)
             
             interval = 1
-            dist_scaled_ = ((dist_scaled - eps) / interval * 6)[d]
+            dist_scaled_ = ((dist_scaled - eps) / interval * 6)
 
             gt = 1 / (1 + np.exp(-dist_scaled_))
 
             return gt
             
         
-        for j in clusters_tmp.keys():
-            for i in clusters_tmp.keys():
-                # mean_t is in the transformed data
-                dists = clusters_tmp[j].mean_t - clusters_tmp[i].mean_t
-                A[j,i] = dists
-        
-        D = np.max(A, axis=(0,1))
-        D = np.max(A, axis=(0,1))
-        
+
+        D = np.zeros(dim)
+
+        j_i = itertools.combinations(clusters_tmp.keys(),2)
+        for (i,j) in j_i:
+            dists = clusters_tmp[j].mean_t - clusters_tmp[i].mean_t
+            D = np.maximum(D, dists)
+            
         # let A_jid denote the directed distance cluster_j - cluster_i between midpoints in dimension d
         # let D_d denote the maximal distance between two clusters
         # cluster_i is considered active in dimension d iff
         # \exists j : A_ijd > eps * D_d and A_ijd <= eps * D_d' \forall d' \neq d)
         # in words this requres c_i to be lareger in dimension c_j by at least some sparating distace
         #       and it requires c_i to be in the range of c_j in all other dimensions
-        for j in clusters_tmp.keys():
-            for i in clusters_tmp.keys():
-                for d in range(dim):
-                    if not zero_dimensions[d]:
-                        j_in_range = in_range(clusters_tmp[i], clusters_tmp[j],D, d)
-                        i_gt_j = greater_than(clusters_tmp[i], clusters_tmp[j], eps, D, d)
-                        prob = j_in_range * i_gt_j
-                        if prob > clusters[i].active_probs[d]:
-                            clusters[i].active_probs[d] = prob
-        
+        j_i = itertools.combinations(clusters_tmp.keys(),2)
+        for j,i in j_i:
+            i_gt_j = greater_than(clusters_tmp[i], clusters_tmp[j], eps, D)
+            j_in_range = in_range(clusters_tmp[i], clusters_tmp[j],D)
+            prob = j_in_range * i_gt_j
+            clusters[i].active_probs = np.maximum(clusters[i].active_probs,prob) * (1 - zero_dimensions)
+
+            j_gt_i = greater_than(clusters_tmp[j], clusters_tmp[i], eps, D)
+            i_in_range = in_range(clusters_tmp[j], clusters_tmp[i],D)
+            prob = i_in_range * j_gt_i
+            clusters[j].active_probs = np.maximum(clusters[j].active_probs,prob) * (1 - zero_dimensions)
+            
         return clusters
     
     
@@ -331,8 +328,8 @@ class WhitnesDensityClassifier(BaseEstimator):
             active = np.sum(np_lab, axis=0) >= n_pt / 2
             clusters[c].active = active
 
-    @print_time("negative dimensions")
-    def get_negative_dimensions(self,np_points : npt.NDArray,
+    @staticmethod
+    def get_negative_dimensions(np_points : npt.NDArray,
                                 acceptable_contamination : float = 0.001,
                                 maximal_expected_contamination : float = 0.4) -> Tuple[npt.NDArray, npt.NDArray]:
         """Get the dimensions in which the sample `np_point` is not contaminated
@@ -409,6 +406,8 @@ class WhitnesDensityClassifier(BaseEstimator):
         q = q - s_min
         
         # consider every dimensin to be zero as above
-        zero_dimensions = (q / r) * 2 >= (1 - mec)
+        zero_dimensions = (q / r) * 2  >= (1 - mec)
+        ic(q/r)
+        ic(1 - mec)
             
         return zero_dimensions, outliers_labels
