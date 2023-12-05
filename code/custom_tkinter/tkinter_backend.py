@@ -6,6 +6,7 @@ import tkinter as tk
 import customtkinter as ctk
 from sklearn import cluster
 import stats_lib
+from pathlib import Path
 import decision_lib
 import plot_lib
 import pandas as pd
@@ -25,8 +26,12 @@ class TkinterSession():
         self.neg_files = None
         self.neg_data : pd.DataFrame = None
         self.neg_masks = None
-        self.eps : tk.DoubleVar = None
+        self.eps : tk.DoubleVar = None # initialized in main file
         self.numplots = 6
+        self.num_plot_points : tk.IntVar = None # initialized in main file
+        self.decision = None
+        self.min_threshold = 0.5
+        self.max_threshold = 0.7
     
     def get_files(self, file_list : List[str], axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame) -> None:
         self.file_data, self.file_masks = data_lib.load_raw_dataset(file_list)
@@ -43,8 +48,9 @@ class TkinterSession():
         select_frame.remove_all()
         select_frame.set_labels(self.file_data.columns.to_list())
         for i in range(n):
-            select_frame.add_item(i, 2*i, 2*i + 1)
+            select_frame.add_item(2*i, 2*i + 1)
         
+        self.decision = None
         
         # this check possibly raises exception so always call it last
         if not self.neg_data is None:
@@ -65,6 +71,8 @@ class TkinterSession():
 
         self.neg_data, self.neg_masks = neg_data, neg_masks
         self.neg_files = file_list
+        
+        self.decision = None
     
     def ckeck_negs(self):
         # this will raise a key error when the columns do not match
@@ -77,13 +85,11 @@ class TkinterSession():
             self.neg_files = None
             raise Exception("New data did not match negative data!")
             
-            
-        
-    
     def drop_negs(self):
         self.neg_data = None
         self.neg_files = None
         self.neg_masks = None 
+        self.decision = None
         
     def get_channel_names(self, axis_frame : ScrollableInputFrame) -> List[str]:
         if self.file_data is None:
@@ -125,43 +131,77 @@ class TkinterSession():
         
         return label_list
         
-        
-    
-    def compute(self, axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame):
-        
+    def compute_clusters(self):
         np_data = self.file_data.to_numpy()
         if self.neg_data is None:
             np_neg = None
         else:
             np_neg = self.neg_data.to_numpy()
-        
-        eps = self.eps.get()
-        axis_labels = self.get_channel_names(axis_frame=axis_frame)
-        
+
         whitening_engine = transform_lib.WhitenTransformer(whiten=transform_lib.Whitenings.NONE)
-        num_cluster = int(2**len(axis_labels) * 2)
+        num_cluster = int(2**np_data.shape[1] * 2)
         num_cluster = min(np_data.shape[0], num_cluster)
         cluster_engine = cluster.KMeans(n_clusters=num_cluster, n_init='auto')
         
-        decision = decision_lib.WhitnesDensityClassifier(negative_control=np_neg,
+        # TO be implemented dynamically
+        outlier_quantile = 0.001
+        negative_range = 0.9
+
+        self.decision = decision_lib.WhitnesDensityClassifier(
                                               cluster_algorithm=cluster_engine,
                                               whitening_transformer=whitening_engine,
-                                              eps=eps,
-                                              contamination=0.001,
-                                              negative_range=0.9,
-                                              prediction_axis=axis_labels,
+                                              outlier_quantile=outlier_quantile,
                                               verbose=True,
                                               )
 
-        decision.predict(np_data)
-        df_data_points = pd.DataFrame(data=decision.X_transformed, columns=axis_labels) 
-        df_predictions = decision.probabilities_df
-        selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=axis_labels)
-        mask = decision.No_neg_mask
+        self.decision.read_data(np_data,np_neg,negative_range)
+    
+    def compute(self, axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame):
+        
+        if self.decision is None:
+            self.compute_clusters()
+            self.num_plot_points.set(10000)
+        
+        self.decision.eps = self.eps.get()
+        self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
+        
+        self.decision.predict_all()
+        df_data_points = pd.DataFrame(data=self.decision.X_transformed, columns=self.decision.prediction_axis) 
+        df_predictions = self.decision.probabilities_df
+        selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=self.decision.prediction_axis)
+
+        n = self.decision.X.shape[0]
+        p = np.clip(self.num_plot_points.get() / n,0,1)
+        mask = np.random.choice([0,1], n, replace=True, p=[1-p,p] ).astype(bool)
         fig = plot_lib.plot_pairwise_selection_bayesian_no_gt(df_data_points,df_predictions,selected_pairs,n_cols=2,mask=mask)
         
-        short_res = stats_lib.compute_short_results(decision.probabilities_df, 0.4, 0.6, df_data_points)
+        short_res = stats_lib.compute_short_results(self.decision.probabilities_df, self.min_threshold, self.max_threshold, df_data_points)
         
         return fig, short_res
         
+    def export(self, axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame):
+
+        if self.decision is None:
+            self.compute_clusters()
+            self.num_plot_points.set(10000)
         
+        if self.decision.probabilities_df is None:
+            _ = self.compute(axis_frame=axis_frame,select_frame=select_frame)
+
+        df_list = []
+        for file in self.files:
+            file_path = Path(file)
+            test_name = file_path.stem
+            mask = self.file_masks[file]
+            df_data_points = pd.DataFrame(data=self.decision.X_transformed, columns=self.decision.prediction_axis) 
+            df_temp = stats_lib.compute_results(self.decision.probabilities_df.iloc[mask,:],
+                                                     self.min_threshold,
+                                                     self.max_threshold,
+                                                     df_data_points.iloc[mask,:])
+            df_temp.loc[:,"Chamber"] = [test_name]
+            df_list.append(df_temp)
+
+        df_results = pd.concat(df_list)
+        chamber = df_results.pop('Chamber')
+        df_results.insert(0, 'Chamber', chamber)
+        df_results.to_csv("test.csv", index=False)

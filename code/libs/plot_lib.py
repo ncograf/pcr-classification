@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import numpy.typing as npt
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -324,6 +325,7 @@ def plot_pairwise_selection_bayesian_no_gt(
                             save_path : str = None,
                             fig : plt.figure = None,
                             ):
+
     
     # check least requrements
     for (color_one, color_two) in selected_pairs:

@@ -59,7 +59,8 @@ class ScrollablePlotSelectFrame(ctk.CTkScrollableFrame):
     def set_labels(self, labels : List[str]):
         self.labels = labels
 
-    def add_item(self, plot_num : int, init_left : int = None, init_right : int = None):
+    def add_item(self, init_left : int = None, init_right : int = None):
+        plot_num = len(self.left_list)
         if init_left is None:
             text_left = tkinter.StringVar(self, name=f"{plot_num}_left")
         else:

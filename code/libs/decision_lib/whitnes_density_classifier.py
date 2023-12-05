@@ -1,14 +1,12 @@
 import numpy as np
 import itertools
 import pandas as pd
-import scipy.stats as sp
 import numpy.typing as npt
 import transform_lib
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
 from sklearn.ensemble import IsolationForest
 from typing import Dict, List, Tuple, Callable, ParamSpec, TypeVar
 from icecream import ic
-import warnings
 import time
 
 def print_time(text : str):
@@ -43,11 +41,12 @@ class ZeroDensity():
 class WhitnesDensityClassifier(BaseEstimator):
 
     def __init__(self, 
-                 negative_control : npt.ArrayLike,
                  cluster_algorithm : ClusterMixin,
-                 whitening_transformer : TransformerMixin,
+                 whitening_transformer : TransformerMixin = transform_lib.WhitenTransformer(transform_lib.Whitenings.NONE),
+                 negative_control : npt.ArrayLike = None,
                  eps : float = 1.7,
-                 contamination : float = 0.01,
+                 maximal_contamination : float = 0.5,
+                 outlier_quantile: float = 0.001,
                  negative_range: float = 0.9,
                  outliers : bool = True,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
@@ -83,11 +82,16 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.whitening_transformer = whitening_transformer
         self.negative_control = negative_control
         self.negative_remover = transform_lib.RemoveNegativeTransformer(self.negative_control, range=negative_range)
+        self.negative_range=negative_range
         self.eps = eps
-        self.contamination = contamination
+        self.outlier_quantile = outlier_quantile
         self.get_outlier = outliers
         self.verbose = verbose
+        self.maximal_contamination = maximal_contamination
         self.thresh = 0.5
+        self.probabilities_df = None
+        self.X = None
+        self.predictions_df = None
 
         
     def predict(self, X : npt.ArrayLike,
@@ -108,37 +112,17 @@ class WhitnesDensityClassifier(BaseEstimator):
         # ALL EXPOSED VARIABLES (CLASS PROPERTIES) MUST BE WITH RESPECT TO THE WHOLE SAMPLE
         # e.g. a mask must have length X.shape[0]
         
-        # remove points in negative control range
-        self.X = X
-        X_no_neg = self.negative_remover.transform(X)
-        self.No_neg_mask = self.negative_remover.mask
-            
-        # compute zero dimensions
-        self.neg_dimensions, outliers = WhitnesDensityClassifier.get_negative_dimensions(self.X, acceptable_contamination=0.001, maximal_expected_contamination=0.4)
+        self.read_data(data=X, negative_control=self.negative_control, negative_range=self.negative_range)
         
-        # remove outliers and create clusters
-        cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg,
-                                                              self.cluster_algorithm,
-                                                              contamination=self.contamination,
-                                                              get_outliers=self.get_outlier)
-
-        self.cluster_labels = np.zeros_like(self.No_neg_mask, dtype=int)
-        self.cluster_labels[self.No_neg_mask] = cluster_labels_no_neg
-        self.cluster_labels[np.logical_not(self.No_neg_mask)] = np.max(cluster_labels_no_neg) + 1 # negative control range is last cluster
-        self.cluster_dict : Dict[int, transform_lib.Cluster] = self.split_clusters(data=self.X,labels=self.cluster_labels)
-        
-        
-        # transform data accoring to clusters
-        cluster_dict_no_outlier = list(self.cluster_dict.keys())
-        if -1 in cluster_dict_no_outlier:
-            cluster_dict_no_outlier.remove(-1)
-        cluster_means_no_outlier = np.stack([self.cluster_dict[k].mean for k in cluster_dict_no_outlier], axis=0)
-        self.whitening_transformer.fit(cluster_means_no_outlier)
-        self.X_transformed = self.whitening_transformer.transform(self.X)
-
-        # add transformed properties to clusters
-        self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
-        
+        self.predict_all()
+    
+        return self.predictions_df
+    
+    ###############################################
+    # HIGH LEVEL AND STATIC METHODS
+    ###############################################
+    
+    def predict_all(self):
         # make cluster predictions
         self.cluster_dict = self.predict_cluster_labels(self.X_transformed,
                                                         clusters=self.cluster_dict,
@@ -153,9 +137,129 @@ class WhitnesDensityClassifier(BaseEstimator):
         # add labels to predictions here we use the domain knowledge to label predictions
         self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
         self.probabilities_df = pd.DataFrame(data = self.probabilities, columns=self.prediction_axis)
+        
     
-        return self.predictions_df
+    @staticmethod
+    def get_negative_dimensions(np_points : npt.NDArray,
+                                acceptable_contamination : float = 0.001,
+                                maximal_expected_contamination : float = 0.4) -> Tuple[npt.NDArray, npt.NDArray]:
+        """Get the dimensions in which the sample `np_point` is not contaminated
+        and as a bonuns get outliers
+        
+        How can we do this: The fundamental Idea is that most of the points are negative
+        in all dimensions (according the data we that was avilable while constructing
+        this algorithm the procentage of such points was between 85 and 100).
+        Moreover, the second obervation on which this algorithm is based, is that these
+        point (which are negative in all dimensions) do not have a large spread 
+        (in the data the spread of the negative data was around 10 - 20 percent of
+        the whole range of point values in samples with positively lavelled points)
+        
+        First the algorithm removes outliers and in fact it assumes to have
+        the precentile `acceptable contamination` of points to be outliers.
+        After this we call the sample without the outliers S.
+
+        We use the parameter
+        -> `maximal_expected_contamination` = mec
+        int the following
+        
+        For a sample S, lets only condier axis d and let r := max(S) - min(S) (in axis d).
+        Further let q \in \R be such that |{p \in S : p_d - min(S_d) < q}| = (1 - mec)|S|.
+        (The intuition here is that at least all points below q will be negatives).
+        Then we consider the axis d of S to be completely negative if
+        (q / r) >= (1 - mec) / 2.
+        
+        So we need the following assumptions on a sample S for this to work:
+            - In each dimension, less than `maximal_expected_contamination` * |S| points are
+                contaminated with the disease corresponding to dimension d.
+            - The distribution of the "negative" points in dimension d of sample |S|
+                is evenly distributed, more specifically: let N(S) be all "negative" points
+                of S in dimension d. Then let q (as above) be the span such that (1-mec)
+                points are contained in a range q. These points must then span more than
+                (1-mec) / 2 times the range spanned by N(S) in dimension d. 
+                Note that for uniformly distributed data we would expect
+                them to span (1-mec) the range and for normally distributed
+                data more that 0.5 as long as mec < 0.5. Here we expect 
+                the algorithm will work better the higher the procentile of 
+                netative points. Althought there would needs to be a 300% more positive
+                points such that this would have a serious negative effect.
+            - Lastly we assume that positive samples in dimension d have a higher value
+                than min(S_d) + 2 * p / (1 - mec). This is again a reasonable assumption
+                based on the data we have, as we have this value higher than 
+                min(S_d) + 6 * p / (1 - mec). 
+        
+
+        Args:
+            np_points (npt.NDArray): points to be inspected
+            acceptable_contamination (float, optional): Outliers which can be contaminated points
+                in a negative control for example. Defaults to 0.001.
+            maximal_expected_contamination (float, optional): Over all samples in a series
+                there should not be more than a quantile of this amount conatimated. Defaults to 0.4.
+
+        Returns:
+            Tuple[npt.NDArray, npt.NDArray]: Indicator array for each dimension to be only negative, 
+                outplier labels (-1 are outliers).
+        """
+        outlier_detector = IsolationForest(contamination=acceptable_contamination,
+                                            n_jobs=3,
+                                            max_samples=np_points.shape[0],
+                                            n_estimators=10)
+        outliers_labels = outlier_detector.fit_predict(np_points)
+        outliers_mask = outliers_labels < 0
+        np_points_no_outlier = np_points[~outliers_mask]
+        
+        # we consider a dimension to be zero if the 1 - maximal_expected_contamination
+        # covers more than (1 - maximal_expected_contamination) / 10 of the range (max - min)
+        s_max = np.max(np_points_no_outlier, axis=0)
+        s_min = np.min(np_points_no_outlier, axis=0)
+        r = s_max - s_min
+
+        mec = maximal_expected_contamination
+        q = np.percentile(np_points_no_outlier, 100 - 100 * mec, axis=0)
+        q = q - s_min
+        
+        # consider every dimensin to be zero as above
+        zero_dimensions = (q / r) * 2  >= (1 - mec)
+            
+        return zero_dimensions, outliers_mask
+
+    def read_data(self, data : npt.NDArray, negative_control : npt.NDArray, negative_range : float):
+        """Reads and clusters data makes all preparations for later changes
+
+        Args:
+            data (npt.NDArray): data to be processed
+            negative_control (npt.NDArray): negative contorl sample
+            negative_range (float) : range of the negative controls max in each dimension to be considerd negative
+        """
+        # set data
+        self.X = data
+
+        # set negatibe control
+        self.negative_remover = transform_lib.RemoveNegativeTransformer(negative_control, range=negative_range)
+        self.negative_control = negative_control
+        _ = self.negative_remover.transform(self.X)
+        self.No_neg_mask = self.negative_remover.mask
+
+        # compute zero dimensions
+        self.neg_dimensions, outliers_mask = WhitnesDensityClassifier.get_negative_dimensions(self.X, acceptable_contamination=self.outlier_quantile, maximal_expected_contamination=self.maximal_contamination)
+        
+        # remove outliers and create clusters
+        self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
+        self.cluster_dict : Dict[int, transform_lib.Cluster] = self.split_clusters(data=self.X,labels=self.cluster_labels)
+        
+        # transform data accoring to clusters
+        cluster_dict_no_outlier = list(self.cluster_dict.keys())
+        if -1 in cluster_dict_no_outlier:
+            cluster_dict_no_outlier.remove(-1)
+        cluster_means_no_outlier = np.stack([self.cluster_dict[k].mean for k in cluster_dict_no_outlier], axis=0)
+        self.whitening_transformer.fit(cluster_means_no_outlier)
+        self.X_transformed = self.whitening_transformer.transform(self.X)
+
+        # add transformed properties to clusters
+        self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
     
+   ################################################
+   # LOW LEVEL METHODS
+   ################################################ 
     
     @print_time("predict labels")
     def predict_labels(self,
@@ -210,18 +314,11 @@ class WhitnesDensityClassifier(BaseEstimator):
         return clusters
 
     @print_time("compute clusters")
-    def get_clusters_and_outlier(self, data : npt.ArrayLike, cluster_engine : ClusterMixin, get_outliers=True, contamination = 0.001) -> npt.NDArray:
-
-        if get_outliers:
-            outlier_detector = IsolationForest(contamination=contamination,
-                                               n_jobs=4,
-                                               max_samples=data.shape[0],
-                                               n_estimators=10)
-            labels = outlier_detector.fit_predict(data) # outliers will get label -1
-            labels[labels >= 0] = cluster_engine.fit_predict(data[labels >= 0])
-        else:
-            labels = cluster_engine.fit_predict(data)
-        
+    def get_clusters(self, data : npt.NDArray, cluster_engine : ClusterMixin, outliers_mask : npt.NDArray, no_neg_mask : npt.NDArray) -> npt.NDArray:
+        labels = np.zeros_like(no_neg_mask, dtype=int)
+        labels = np.ones(data.shape[0]) * (-1)
+        labels[~outliers_mask & no_neg_mask] = cluster_engine.fit_predict(data[~outliers_mask & no_neg_mask])
+        labels[np.logical_not(no_neg_mask)] = np.max(labels) + 1 # negative control range is last cluster
         return labels
 
     @print_time("predict cluster labels")
@@ -244,7 +341,6 @@ class WhitnesDensityClassifier(BaseEstimator):
         clusters_tmp = clusters.copy()
         
         clusters_tmp.pop(-1, None) # get rid of outliers
-        n_clusters = len(clusters_tmp)
         dim = data.shape[1]
         
         def in_range(c1 : transform_lib.Cluster, c2 : transform_lib.Cluster, max_scale : npt.NDArray) -> npt.NDArray:
@@ -327,87 +423,3 @@ class WhitnesDensityClassifier(BaseEstimator):
             n_pt = clusters[c].n
             active = np.sum(np_lab, axis=0) >= n_pt / 2
             clusters[c].active = active
-
-    @staticmethod
-    def get_negative_dimensions(np_points : npt.NDArray,
-                                acceptable_contamination : float = 0.001,
-                                maximal_expected_contamination : float = 0.4) -> Tuple[npt.NDArray, npt.NDArray]:
-        """Get the dimensions in which the sample `np_point` is not contaminated
-        and as a bonuns get outliers
-        
-        How can we do this: The fundamental Idea is that most of the points are negative
-        in all dimensions (according the data we that was avilable while constructing
-        this algorithm the procentage of such points was between 85 and 100).
-        Moreover, the second obervation on which this algorithm is based, is that these
-        point (which are negative in all dimensions) do not have a large spread 
-        (in the data the spread of the negative data was around 10 - 20 percent of
-        the whole range of point values in samples with positively lavelled points)
-        
-        First the algorithm removes outliers and in fact it assumes to have
-        the precentile `acceptable contamination` of points to be outliers.
-        After this we call the sample without the outliers S.
-
-        We use the parameter
-        -> `maximal_expected_contamination` = mec
-        int the following
-        
-        For a sample S, lets only condier axis d and let r := max(S) - min(S) (in axis d).
-        Further let q \in \R be such that |{p \in S : p_d - min(S_d) < q}| = (1 - mec)|S|.
-        (The intuition here is that at least all points below q will be negatives).
-        Then we consider the axis d of S to be completely negative if
-        (q / r) >= (1 - mec) / 2.
-        
-        So we need the following assumptions on a sample S for this to work:
-            - In each dimension, less than `maximal_expected_contamination` * |S| points are
-                contaminated with the disease corresponding to dimension d.
-            - The distribution of the "negative" points in dimension d of sample |S|
-                is evenly distributed, more specifically: let N(S) be all "negative" points
-                of S in dimension d. Then let q (as above) be the span such that (1-mec)
-                points are contained in a range q. These points must then span more than
-                (1-mec) / 2 times the range spanned by N(S) in dimension d. 
-                Note that for uniformly distributed data we would expect
-                them to span (1-mec) the range and for normally distributed
-                data more that 0.5 as long as mec < 0.5. Here we expect 
-                the algorithm will work better the higher the procentile of 
-                netative points. Althought there would needs to be a 300% more positive
-                points such that this would have a serious negative effect.
-            - Lastly we assume that positive samples in dimension d have a higher value
-                than min(S_d) + 2 * p / (1 - mec). This is again a reasonable assumption
-                based on the data we have, as we have this value higher than 
-                min(S_d) + 6 * p / (1 - mec). 
-        
-
-        Args:
-            np_points (npt.NDArray): points to be inspected
-            acceptable_contamination (float, optional): Outliers which can be contaminated points
-                in a negative control for example. Defaults to 0.001.
-            maximal_expected_contamination (float, optional): Over all samples in a series
-                there should not be more than a quantile of this amount conatimated. Defaults to 0.4.
-
-        Returns:
-            Tuple[npt.NDArray, npt.NDArray]: Indicator array for each dimension to be only negative, 
-                outplier labels (-1 are outliers).
-        """
-        outlier_detector = IsolationForest(contamination=acceptable_contamination,
-                                            n_jobs=3,
-                                            max_samples=np_points.shape[0],
-                                            n_estimators=10)
-        outliers_labels = outlier_detector.fit_predict(np_points)
-        np_points_no_outlier = np_points[outliers_labels >= 0]
-        
-        # we consider a dimension to be zero if the 1 - maximal_expected_contamination
-        # covers more than (1 - maximal_expected_contamination) / 10 of the range (max - min)
-        s_max = np.max(np_points_no_outlier, axis=0)
-        s_min = np.min(np_points_no_outlier, axis=0)
-        r = s_max - s_min
-
-        mec = maximal_expected_contamination
-        q = np.percentile(np_points_no_outlier, 100 - 100 * mec, axis=0)
-        q = q - s_min
-        
-        # consider every dimensin to be zero as above
-        zero_dimensions = (q / r) * 2  >= (1 - mec)
-        ic(q/r)
-        ic(1 - mec)
-            
-        return zero_dimensions, outliers_labels
