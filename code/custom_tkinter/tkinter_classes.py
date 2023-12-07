@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import tkinter
 from icecream import ic
-from typing import List
+from typing import List, Dict
 
 class ScrollableInputFrame(ctk.CTkScrollableFrame):
     def __init__(self, master, font, **kwargs):
@@ -13,12 +13,12 @@ class ScrollableInputFrame(ctk.CTkScrollableFrame):
         self.label_list = []
         self.font = font
 
-    def add_item(self, label : str, text : str = None):
-        if text is None:
+    def add_item(self, label : str, default : Dict[str, str]):
+        if not default is None and label in default.keys():
             # using textvars will retain the value entered for each axis even if the data is newly loaded
-            textvar = tkinter.StringVar(self, name=label)
+            textvar = tkinter.StringVar(self, name=label, value=default[label])
         else:
-            textvar = tkinter.StringVar(self, name=label, value=text)
+            textvar = tkinter.StringVar(self, name=label)
         label = ctk.CTkLabel(self, text=label,
                              justify='center',
                              font=self.font,

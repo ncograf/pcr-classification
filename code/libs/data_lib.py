@@ -255,10 +255,10 @@ def load_raw_dataset(files: List[str]) -> Tuple[pd.DataFrame, Dict[str, npt.NDAr
         path = pathlib.Path(file)
         
         if not path.is_file():
-            raise FileNotFoundError(f"Error: {path} is not a file.")
+            raise FileNotFoundError(f"Error: {path.name} is not a file.")
         
         if not path.suffix == ".csv":
-            raise FileNotFoundError(f"Error: {path} is not a csv file.")
+            raise FileNotFoundError(f"Error: {path.name} is not a csv file.")
         
         col_pattern = "^Chan.*"
         raw_data = pd.read_csv(str(path))
@@ -277,8 +277,7 @@ def load_raw_dataset(files: List[str]) -> Tuple[pd.DataFrame, Dict[str, npt.NDAr
         try:
             df = df.loc[:, cols]
         except:
-            raise KeyError(f"File {files[i]} does not contain the needed columns: {cols.to_list}." +
-                           f"\n\nNote that we assume {files[0]} contains the right colums and we only consider columns which names start with 'Chan'")
+            raise KeyError(f"Not all files have the same columns (note that we only include columns with names starting with 'Chan*')")
         start_indices.append(start_indices[len(start_indices)-1] + df.shape[0])
     
     df_major = pd.concat(df_list, axis=0)

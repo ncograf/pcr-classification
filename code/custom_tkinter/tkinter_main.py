@@ -9,13 +9,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter_classes import ScrollableInputFrame, ScrollablePlotSelectFrame
 from tkinter_backend import TkinterSession
 from CTkTable import CTkTable
+from pathlib import Path
 import pandas as pd
 import time
 
 class ctkApp:
         
     def __init__(self):
-        
 
         ctk.set_appearance_mode("system")
         self.root = ctk.CTk()
@@ -24,40 +24,54 @@ class ctkApp:
         self.root.update()
 
         self.session = TkinterSession()
-        self.session.eps = tk.DoubleVar(self.root, value=0.4, name="eps")
-        self.session.num_plot_points = tk.IntVar(self.root, value=10000, name="num_plot_points")
+        self.session.init_settings(self.root)
+        self.session.load_settings()
 
         self.font = (tk.font.nametofont("TkDefaultFont"), 15)
         self.titlefont = (tk.font.nametofont("TkDefaultFont"), 20)
         bg_color = self.root.cget("fg_color")
 
-        self.root.grid_columnconfigure(0,minsize=400,weight=1,uniform=1)
-        self.root.grid_columnconfigure(1,weight=10,uniform=1)
-        self.root.grid_rowconfigure(0,weight=10)
-        self.root.grid_rowconfigure(1,weight=2)
+        self.root.grid_columnconfigure(0,weight=1,uniform=1)
+        self.root.grid_rowconfigure(0,weight=1)
 
-        self.plot_frame = ctk.CTkFrame(master=self.root)
-        self.plot_frame.grid(column=1,row=0, sticky="snwe",pady=(5,5), padx=(5,5))
+        self.tab_view = ctk.CTkTabview(self.root)
+        self.tab_view.grid(row=0,column=0,padx=(0,0),pady=(0,0), sticky="news" )
+    
+
+        self.tab_plots = self.tab_view.add("Experiments")
+        self.tab_plots.grid_columnconfigure(0,minsize=400,weight=1,uniform=1)
+        self.tab_plots.grid_columnconfigure(1,weight=10,uniform=1)
+        self.tab_plots.grid_rowconfigure(0,weight=10)
+        self.tab_plots.grid_rowconfigure(1,weight=2)
+
+        self.tab_settings = self.tab_view.add("Settings")
+        
+        ###############################
+        # Experiments
+        ###############################
+
+        self.plot_frame = ctk.CTkFrame(master=self.tab_plots)
+        self.plot_frame.grid(column=1,row=0, sticky="snwe",pady=(5,0), padx=(5,5))
         self.plot_frame.grid_columnconfigure(0,weight=1,uniform=1)
         self.plot_frame.grid_rowconfigure(0,weight=1,uniform=1)
 
-        self.res_frame = ctk.CTkFrame(master=self.root)
+        self.res_frame = ctk.CTkFrame(master=self.tab_plots)
         self.res_frame.grid(column=1,row=1, sticky="we",pady=(5,5), padx=(5,5))
         self.res_frame.grid_columnconfigure(0,weight=1,uniform=1)
         self.res_frame.grid_rowconfigure(1,weight=1)
         self.res_frame.grid_rowconfigure(0,weight=1)
 
-        self.control_frame = ctk.CTkFrame(master=self.root,
+        self.control_frame = ctk.CTkFrame(master=self.tab_plots,
                                   fg_color=bg_color,
                                   )
         self.control_frame.grid(column=0,row=0,rowspan=2, sticky="news",pady=(5,5), padx=(5,5))
         self.control_frame.grid_columnconfigure(0,weight=25)
         self.control_frame.grid_columnconfigure(1,weight=15)
 
-        button_pad = 15
+        button_pad = 10
         pad_x = 20
         pad_x_inter = 10
-        pad_y_inter = 10
+        pad_y_inter = 3
         button_height = self.font[1] + 15
         rowcnt = 0
 
@@ -65,7 +79,7 @@ class ctkApp:
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        self.experiment_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(50,0), sticky="news")
+        self.experiment_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.files_button = ctk.CTkButton(master = self.control_frame,
@@ -121,11 +135,11 @@ class ctkApp:
         self.slider_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        self.slider = ctk.CTkSlider(master=self.control_frame, from_=0, to=1, number_of_steps=50, variable=self.session.eps)
+        self.slider = ctk.CTkSlider(master=self.control_frame, from_=0, to=1, number_of_steps=50, variable=self.session.settings_vars["eps"])
         self.slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
         self.slider_display = ctk.CTkEntry(master=self.control_frame,
                                 font=self.font,
-                                textvariable=self.session.eps,
+                                textvariable=self.session.settings_vars["eps"],
                                     justify='center',
                             )
         self.slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
@@ -152,11 +166,15 @@ class ctkApp:
         self.plot_point_slider_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        self.plot_point_slider = ctk.CTkSlider(master=self.control_frame, from_=0, to=1, number_of_steps=50, variable=self.session.num_plot_points)
+        self.plot_point_slider = ctk.CTkSlider(master=self.control_frame,
+                                               from_=0,
+                                               to=1,
+                                               number_of_steps=50,
+                                               variable=self.session.settings_vars["num_plot_points"])
         self.plot_point_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
         self.plot_point_slider_display = ctk.CTkEntry(master=self.control_frame,
                                 font=self.font,
-                                textvariable=self.session.num_plot_points,
+                                textvariable=self.session.settings_vars["num_plot_points"],
                                     justify='center',
                             )
         self.plot_point_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
@@ -184,12 +202,159 @@ class ctkApp:
                              font=self.titlefont,
                              anchor="center")
         self.plot_title.grid(row=0, column=0, padx=(pad_x,pad_x), pady=(pad_y_inter,pad_y_inter), sticky="news")
+        
+        #############################
+        # End Experiments
+        #############################
+
+        #############################
+        # Settings
+        #############################
+        self.settings_frame = ctk.CTkFrame(master=self.tab_settings)
+        self.settings_frame.grid(column=0,row=0, sticky="snwe",pady=(5,0), padx=(5,5))
+        self.settings_frame.grid_columnconfigure(0,weight=1,uniform=1)
+        self.settings_frame.grid_rowconfigure(0,weight=1,uniform=1)
+
+        rowcnt=0
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="General computation",
+                             justify='center',
+                             font=self.titlefont,
+                             anchor="center")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        rowcnt = rowcnt+1
+        
+        self.outliers = ctk.CTkLabel(self.settings_frame, text="Outlier percentile (amount of outlier points to be removed)",
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        self.outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.1, number_of_steps=500, variable=self.session.settings_vars["outliers"])
+        self.outliers_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        self.outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
+                                font=self.font,
+                                textvariable=self.session.settings_vars["outliers"],
+                                    justify='center',
+                            )
+        self.outliers_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        tmp_label = ctk.CTkLabel(self.settings_frame, wraplength=500, text="Negative threshhold (points which are below that number times "
+                                 + "the max of the zero cluster in all dimensions are ignored (only used for speedup))",
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["neg_ignore"])
+        tmp_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        tmp_display = ctk.CTkEntry(master=self.settings_frame,
+                                font=self.font,
+                                textvariable=self.session.settings_vars["neg_ignore"],
+                                    justify='center',
+                            )
+        tmp_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="Negative control detection",
+                             justify='center',
+                             font=self.titlefont,
+                             anchor="center")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        tmp_textbox = ctk.CTkTextbox(self.settings_frame,
+                             font=self.font,
+                             wrap='word',
+                             )
+        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.insert(0.0,text="The assumptions here are first, that `max_contamination` are contaminated in each dimension, " +
+                           "second, we assume a `even` distribution of the which are negative in each dimension.  " +
+                           "\nThen we assume a sample not to be contaminated in one dimension if a percentile of (1-max_contamination) " +
+                           "points covers at least 0.5 * (1 - max_contamination) points." +
+                           "\nThe factor 0.5 is chosen heristically to account for some skew in the distribution and variance over possible samples." +
+                           "\n\nNote that larger values of `max_contamination` will relax the first assumption with the cost of a more restrictive " +
+                           "second assumption." + 
+                           "This assumption does not hold on for example some of the dillution datasets."
+                           )
+        rowcnt = rowcnt+1
+
+        tmp_label = ctk.CTkLabel(self.settings_frame, text="max contamination (the maximal point of points to be positive in any dimension `not that this is unrealisitc`).",
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["max_contamination"])
+        tmp_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        tmp_display = ctk.CTkEntry(master=self.settings_frame,
+                                font=self.font,
+                                textvariable=self.session.settings_vars["max_contamination"],
+                                    justify='center',
+                            )
+        tmp_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        self.nc_outliers = ctk.CTkLabel(self.settings_frame, text="What is the amount of outliers not to be considered in the negative control detection",
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        self.nc_outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        self.nc_outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.01, number_of_steps=500, variable=self.session.settings_vars["nc_outliers"])
+        self.nc_outliers_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        self.nc_outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
+                                font=self.font,
+                                textvariable=self.session.settings_vars["nc_outliers"],
+                                    justify='center',
+                            )
+        self.nc_outliers_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="Export Settings",
+                             justify='center',
+                             font=self.titlefont,
+                             anchor="center")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+
+        
+        rowcnt = rowcnt+1
+        button = ctk.CTkButton(master = self.settings_frame,
+                               text="export directory (exported results will be stored there)",
+                               height=button_height,
+                               font=self.font,
+                               command=self.choose_output_dir)
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        label = ctk.CTkLabel(self.settings_frame, textvariable=self.session.settings_vars["output_path"],
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(pad_y_inter,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        button = ctk.CTkButton(master = self.settings_frame,
+                               text="Save as default",
+                               height=button_height,
+                               font=self.font,
+                               command=self.save_default)
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad + 20,0), sticky="news")
+        rowcnt = rowcnt+1
+        
+        
+        #########################
+        # END SETTINGS
+        ########################
 
         self.root.protocol("WM_DELETE_WINDOW", self.destroy_root)
 
         self.root.mainloop()
-   
-   
    
    
    
@@ -210,12 +375,19 @@ class ctkApp:
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
 
+    def choose_output_dir(self):
+        try:
+            out_dir = fd.askdirectory(parent=self.root, title="Output directory", initialdir=Path.home())
+            self.session.settings_vars["output_path"].set(out_dir)
+        except Exception as e:
+            msg(title="Error", message=str(e), icon="cancel")
+
     def compute_clusters(self):
         try:
             self.session.compute_clusters()
             self.cluster_buttton.configure(require_redraw=True, fg_color="green")
             self.plot_point_slider._to = self.session.decision.X_transformed.shape[0]
-            self.session.num_plot_points.set(10000)
+            self.session.settings_vars["num_plot_points"].set(10000)
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
 
@@ -240,22 +412,30 @@ class ctkApp:
             msg(title="Error", message=str(e), icon="cancel")
 
     def compute(self):
-        try:
+        #try:
             fig, df_results = self.session.compute(self.axis_name_frame, self.plot_selection)
             self.cluster_buttton.configure(require_redraw=True, fg_color="green")
             self.plot_point_slider._to = self.session.decision.X_transformed.shape[0]
+            self.session.store_settings(axis=True, settings=False)
             self.draw_results(df_results)
             self.draw_figure(fig)
-        except Exception as e:
-            msg(title="Error", message=str(e), icon="cancel")
+        #except Exception as e:
+        #    msg(title="Error", message=str(e), icon="cancel")
 
     def export(self):
-        try:
+        #try:
             self.session.export(self.axis_name_frame, self.plot_selection)
+            self.session.store_settings(axis=True, settings=False)
             msg(title="Export", message="Successful export.", icon="check")
-        except Exception as e:
-            msg(title="Error", message=str(e), icon="cancel")
+        #except Exception as e:
+        #    msg(title="Error", message=str(e), icon="cancel")
         
+    def save_default(self):
+        #try:
+            self.session.store_settings(axis=False)
+            msg(title="Export", message="Successfully saved settings as default.", icon="check")
+        #except Exception as e:
+        #    msg(title="Error", message=str(e), icon="cancel")
         
     def draw_results(self, df_results : pd.DataFrame):
         shape = df_results.shape
@@ -271,6 +451,7 @@ class ctkApp:
         canvas.get_tk_widget().place(relx=0, rely=0, relheight=1,relwidth=1)
         canvas.draw()
         self.root.update()
+    
         
 if __name__ == "__main__":        
     CTK_Window = ctkApp()
