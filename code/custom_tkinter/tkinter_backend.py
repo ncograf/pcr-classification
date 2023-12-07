@@ -5,6 +5,7 @@ from icecream import ic
 import tkinter as tk    
 import customtkinter as ctk
 from sklearn import cluster
+from typing import Dict
 import stats_lib
 from pathlib import Path
 import decision_lib
@@ -26,35 +27,78 @@ class TkinterSession():
         self.neg_files = None
         self.neg_data : pd.DataFrame = None
         self.neg_masks = None
-        self.eps : tk.DoubleVar = None # initialized in main file
+        self.settings_vars : Dict[str, tk.Variable] = {}
+
         self.numplots = 6
-        self.num_plot_points : tk.IntVar = None # initialized in main file
         self.decision = None
         self.min_threshold = 0.5
         self.max_threshold = 0.7
+        self.settings_dir = Path(Path.home(),".pcr_conc")
+        self.settings_path = Path(self.settings_dir,"settings.csv")
+        self.axis_map_path = Path(self.settings_dir,"axis_map.csv")
+
+    def default_settings(self):
+        settings_dict_default = { 
+            "output_path": str(Path(Path.home(), "pcr_results").absolute()),
+            "eps" : 0.3,
+            "outliers" : 0.001, 
+            "nc_outliers" : 0.01,
+            "max_contamination" : 0.5,
+            "neg_ignore" : 0.9,
+            "num_plot_points" : 10000,
+            }
+
+        axis_map_default = {
+            "Chan1_FluoValue" : 'SARS-N2_POS',
+            "Chan2_FluoValue" : 'SARS-N1_POS',
+            "Chan3_FluoValue" : 'IBV-M_POS',
+            "Chan4_FluoValue" : 'RSV-N_POS',
+            "Chan5_FluoValue" : 'IAV-M_POS',
+            "Chan6_FluoValue" : 'MHV_POS',
+        }
+        return settings_dict_default, axis_map_default
+    
+    def init_settings(self, master):
+        settings_list = [
+            tk.DoubleVar(master, None, "eps"),
+            tk.IntVar(master, None, "num_plot_points"),
+            tk.DoubleVar(master, None, "outliers"),
+            tk.DoubleVar(master, None, "nc_outliers"),
+            tk.DoubleVar(master, None, "max_contamination"),
+            tk.DoubleVar(master, None, "neg_ignore"),
+            tk.StringVar(master, None, "output_path")
+        ]
+        for m in settings_list:
+            self.settings_vars[str(m)] = m
     
     def get_files(self, file_list : List[str], axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame) -> None:
-        self.file_data, self.file_masks = data_lib.load_raw_dataset(file_list)
-        self.files = file_list
+        
+        file_data, file_masks = data_lib.load_raw_dataset(file_list)
+
+        if not file_data.dtypes.map(pd.api.types.is_numeric_dtype).all():
+            raise Exception("Chosen file(s) do have columns with non numeric entries. You have possibly chosen a wrong file.")
+
         axis_frame.remove_all()
-        for col in self.file_data.columns:
-            axis_frame.add_item(col,col)
+        for col in file_data.columns:
+            axis_frame.add_item(col,self.axis_map)
        
-        n = self.file_data.shape[1]
+        n = file_data.shape[1]
         if n % 2 == 1:
             n = (n+1) // 2
         else:
             n = n // 2
         select_frame.remove_all()
-        select_frame.set_labels(self.file_data.columns.to_list())
+        select_frame.set_labels(file_data.columns.to_list())
         for i in range(n):
             select_frame.add_item(2*i, 2*i + 1)
         
         self.decision = None
+        self.file_data, self.file_masks = file_data, file_masks
+        self.files = file_list
         
         # this check possibly raises exception so always call it last
         if not self.neg_data is None:
-            self.ckeck_negs
+            self.ckeck_negs()
 
     def get_negs(self, file_list : List[str]) -> None:
         if self.file_data is None:
@@ -64,7 +108,12 @@ class TkinterSession():
         # this will raise a key error when the columns do not match
         neg_data = neg_data.loc[:, self.file_data.columns]
         
-        neg_dims, _ = decision_lib.WhitnesDensityClassifier.get_negative_dimensions(neg_data)
+        acceptable_contamination = self.settings_vars["nc_outliers"].get()
+        maximal_expected_contamination = self.settings_vars["max_contamination"].get()
+        
+        neg_dims, _ = decision_lib.WhitnesDensityClassifier.get_negative_dimensions(neg_data,
+                                                                                    acceptable_contamination=acceptable_contamination,
+                                                                                    maximal_expected_contamination=maximal_expected_contamination)
 
         if np.any(~neg_dims):
             raise NotNegError(f"File list {file_list} contains cluster which are contaminated!")
@@ -132,6 +181,7 @@ class TkinterSession():
         return label_list
         
     def compute_clusters(self):
+        
         np_data = self.file_data.to_numpy()
         if self.neg_data is None:
             np_neg = None
@@ -143,14 +193,15 @@ class TkinterSession():
         num_cluster = min(np_data.shape[0], num_cluster)
         cluster_engine = cluster.KMeans(n_clusters=num_cluster, n_init='auto')
         
-        # TO be implemented dynamically
-        outlier_quantile = 0.001
-        negative_range = 0.9
+        outlier_quantile = self.settings_vars["outliers"].get()
+        negative_range = self.settings_vars["neg_ignore"].get()
+        max_pos_amount = self.settings_vars["max_contamination"].get()
 
         self.decision = decision_lib.WhitnesDensityClassifier(
                                               cluster_algorithm=cluster_engine,
                                               whitening_transformer=whitening_engine,
                                               outlier_quantile=outlier_quantile,
+                                              maximal_contamination=max_pos_amount,
                                               verbose=True,
                                               )
 
@@ -160,9 +211,9 @@ class TkinterSession():
         
         if self.decision is None:
             self.compute_clusters()
-            self.num_plot_points.set(10000)
+            self.settings_vars["num_plot_points"].set(10000)
         
-        self.decision.eps = self.eps.get()
+        self.decision.eps = self.settings_vars["eps"].get()
         self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
         
         self.decision.predict_all()
@@ -171,7 +222,7 @@ class TkinterSession():
         selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=self.decision.prediction_axis)
 
         n = self.decision.X.shape[0]
-        p = np.clip(self.num_plot_points.get() / n,0,1)
+        p = np.clip(self.settings_vars["num_plot_points"].get() / n,0,1)
         mask = np.random.choice([0,1], n, replace=True, p=[1-p,p] ).astype(bool)
         fig = plot_lib.plot_pairwise_selection_bayesian_no_gt(df_data_points,df_predictions,selected_pairs,n_cols=2,mask=mask)
         
@@ -183,7 +234,7 @@ class TkinterSession():
 
         if self.decision is None:
             self.compute_clusters()
-            self.num_plot_points.set(10000)
+            self.settings_vars["num_plot_points"].set(10000)
         
         if self.decision.probabilities_df is None:
             _ = self.compute(axis_frame=axis_frame,select_frame=select_frame)
@@ -204,4 +255,65 @@ class TkinterSession():
         df_results = pd.concat(df_list)
         chamber = df_results.pop('Chamber')
         df_results.insert(0, 'Chamber', chamber)
-        df_results.to_csv("test.csv", index=False)
+        output_path = Path(self.settings_vars["output_path"].get(), "results.csv")
+        df_results.to_csv(output_path, index=False)
+        
+    
+    def load_settings(self, change_config : bool = True):
+        
+        settings_dict_default, axis_map_default = self.default_settings()
+
+        settings = {}
+        if self.settings_path.is_file():
+            settings = pd.read_csv(self.settings_path).to_dict(index="False")
+            
+        # pd.Dataframe.to_dict() returns dictionairies for every key! Has to be transformed back
+        for k in settings.keys():
+            settings[k] = settings[k][0]
+        settings = settings_dict_default | settings
+
+        axis_map = {}
+        if self.axis_map_path.is_file():
+            axis_map = pd.read_csv(self.axis_map_path).to_dict(index="False")
+        
+        for k in axis_map.keys():
+            axis_map[k] = axis_map[k][0]
+        axis_map = axis_map_default | axis_map
+        
+        if change_config:
+            for s in self.settings_vars.keys():
+                if s in settings.keys():
+                    self.settings_vars[s].set(settings[s])
+            self.axis_map = axis_map
+        
+        return axis_map, settings
+    
+    def settings_dict(self):
+        settings_dict = {}
+        for s in self.settings_vars.keys():
+            settings_dict[s] = self.settings_vars[s].get()
+        return settings_dict
+            
+            
+    def store_settings(self, settings=True, axis=True):
+        
+        # first get settings
+        stored_axis_map, stored_settings = self.load_settings(change_config=False)
+        
+        
+        # comine with local settings not to loose anything
+        axis_map = stored_axis_map | self.axis_map
+        settings = stored_settings | self.settings_dict()
+        
+        # convert values to strings or numbers instead of tkinter variables
+        df_settings = pd.DataFrame(settings, index=[0])
+        df_axis_map = pd.DataFrame(axis_map, index=[0])
+        
+        # create settings path if it does not exists
+        self.settings_dir.mkdir(parents=True, exist_ok=True)
+        
+        # store settings
+        if settings:
+            df_settings.to_csv(self.settings_path,index=False)
+        if axis:
+            df_axis_map.to_csv(self.axis_map_path,index=False)

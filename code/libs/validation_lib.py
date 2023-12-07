@@ -333,3 +333,13 @@ def get_negative_percent(gt : pd.DataFrame, axis : List[str]):
     print(f'Positive count: \n{df_negative_count}')
     print(f'Positive percent: \n{df_negative_percent}')
     print(f'Negative percent: \n{1 - df_negative_percent}')
+    
+    all_neg = np.sum(np.all(~(np_points.astype(bool)),axis=1))
+    all_neg_per = all_neg / np_points.shape[0]
+    ic(all_neg.shape)
+    ic(all_neg_per.shape)
+    ic(np.var(np_points, axis=0))
+    print(f'All neg Count count: \n{all_neg}')
+    print(f'All neg percent: \n{all_neg_per}')
+    print(f'All pos percent: \n{1 - all_neg_per}')
+    
