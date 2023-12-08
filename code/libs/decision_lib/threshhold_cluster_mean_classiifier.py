@@ -20,7 +20,6 @@ class ThresholdMeanClassifier(BaseEstimator):
     
     def __init__(self, 
                  negative_control : npt.ArrayLike,
-                 positive_control : npt.ArrayLike,
                  cluster_algorithm : ClusterMixin,
                  transform_base : str = "pos",
                  whitening_transformer : TransformerMixin = transform_lib.WhitenTransformer(transform_lib.Whitenings.ZCA_COR),
@@ -45,7 +44,6 @@ class ThresholdMeanClassifier(BaseEstimator):
         self.prediction_axis = prediction_axis
         self.cluster_algorithm = cluster_algorithm
         self.negative_control = negative_control
-        self.positive_control = positive_control
         self.transform_base = transform_base
         self.negative_remover = transform_lib.RemoveNegativeTransformer(self.negative_control)
         

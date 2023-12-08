@@ -46,15 +46,16 @@ class TkinterSession():
             "nc_outliers" : 0.01,
             "neg_ignore" : 0.9,
             "num_plot_points" : 10000,
+            "algorithm" : "Hierarchy",
             }
 
         axis_map_default = {
-            "Chan1_FluoValue" : 'SARS-N2_POS',
-            "Chan2_FluoValue" : 'SARS-N1_POS',
-            "Chan3_FluoValue" : 'IBV-M_POS',
-            "Chan4_FluoValue" : 'RSV-N_POS',
-            "Chan5_FluoValue" : 'IAV-M_POS',
-            "Chan6_FluoValue" : 'MHV_POS',
+            "Chan1_FluoValue" : 'SARS-N2',
+            "Chan2_FluoValue" : 'SARS-N1',
+            "Chan3_FluoValue" : 'IBV-M',
+            "Chan4_FluoValue" : 'RSV-N',
+            "Chan5_FluoValue" : 'IAV-M',
+            "Chan6_FluoValue" : 'MHV',
         }
         return settings_dict_default, axis_map_default
     
@@ -65,7 +66,8 @@ class TkinterSession():
             tk.DoubleVar(master, None, "outliers"),
             tk.DoubleVar(master, None, "nc_outliers"),
             tk.DoubleVar(master, None, "neg_ignore"),
-            tk.StringVar(master, None, "output_path")
+            tk.StringVar(master, None, "output_path"),
+            tk.StringVar(master, None, "algorithm"),
         ]
         for m in settings_list:
             self.settings_vars[str(m)] = m
@@ -193,12 +195,21 @@ class TkinterSession():
         outlier_quantile = self.settings_vars["outliers"].get()
         negative_range = self.settings_vars["neg_ignore"].get()
 
-        self.decision = decision_lib.WhitnesDensityClassifier(
-                                              cluster_algorithm=cluster_engine,
-                                              whitening_transformer=whitening_engine,
-                                              outlier_quantile=outlier_quantile,
-                                              verbose=True,
-                                              )
+        if self.settings_vars["algorithm"].get() == "Hierarchy":
+            self.decision = decision_lib.ClusterRelativeHierarchyMeanClassifier(
+                                                cluster_algorithm=cluster_engine,
+                                                whitening_transformer=whitening_engine,
+                                                contamination=outlier_quantile,
+                                                negative_range=negative_range,
+                                                )
+        else:
+            self.decision = decision_lib.WhitnesDensityClassifier(
+                                                cluster_algorithm=cluster_engine,
+                                                whitening_transformer=whitening_engine,
+                                                outlier_quantile=outlier_quantile,
+                                                negative_range=negative_range,
+                                                verbose=True,
+                                                )
 
         self.decision.read_data(np_data,np_neg,negative_range)
     

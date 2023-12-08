@@ -20,9 +20,9 @@ class Comparator(Enum):
 class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
     def __init__(self, 
-                 negative_control : npt.ArrayLike,
                  cluster_algorithm : ClusterMixin,
                  whitening_transformer : TransformerMixin,
+                 negative_control : npt.ArrayLike = None,
                  eps : float = 1.7,
                  contamination : float = 0.001,
                  negative_range: float = 0.9,
@@ -54,36 +54,91 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         self.cluster_algorithm = cluster_algorithm
         self.whitening_transformer = whitening_transformer
         self.negative_control = negative_control
-        self.negative_remover = transform_lib.RemoveNegativeTransformer(self.negative_control, range=negative_range)
+        self.negative_range=negative_range
         self.eps = eps
-        self.contamination = contamination
-        
+        self.outlier_quantile = contamination
+        self.neg_dimensions = None
+        self.thresh = 0.5
+        self.probabilities_df = None
+        self.X = None
+        self.predictions_df = None
+
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
+                verbose : bool = False,
                 ) -> pd.DataFrame:
         """Assigns a list of true / false indicators for each input in X
 
         Args:
             X (npt.ArrayLike): Samples to be classified
             y (npt.ArrayLike, optional): Ignored. Defaults to None.
+            verbose (boo, optional): Defaults to None.
 
         Returns:
             pd.DataFrame: Indicators for each label
         """
         
         # ALL EXPOSED VARIABLES (CLASS PROPERTIES) MUST BE WITH RESPECT TO THE WHOLE SAMPLE
-        # e.g. a mask must have lenth X.shape[0]
+        # e.g. a mask must have length X.shape[0]
         
-        # remove points in negative control range
-        self.X = X
-        X_no_neg = self.negative_remover.transform(X)
+        self.read_data(data=X, negative_control=self.negative_control, negative_range=self.negative_range)
+        
+        self.predict_all()
+    
+        return self.predictions_df
+    
+    ###############################################
+    # HIGH LEVEL METHODS
+    ###############################################
+    
+    def predict_all(self):
+        # make cluster predictions ==> use non-tranformed data
+        self.cluster_dict = self.predict_cluster_labels(self.X_transformed,
+                                                        clusters=self.cluster_dict,
+                                                        eps=self.eps,
+                                                        zero_dimensions=self.neg_dimensions)
+
+        # generate label predicitions
+        self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
+        self.predictions[self.cluster_labels < 0,:] = -1
+        self.probabilities = self.predictions
+        
+        # add labels to predictions here we use the domain knowledge to label predictions
+        self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
+        self.probabilities_df = pd.DataFrame(data = self.probabilities, columns=self.prediction_axis)
+        
+    
+    def read_data(self, data : npt.NDArray, negative_control : npt.NDArray, negative_range : float):
+        """Reads and clusters data makes all preparations for later changes
+
+        Args:
+            data (npt.NDArray): data to be processed
+            negative_control (npt.NDArray): negative contorl sample
+            negative_range (float) : range of the negative controls max in each dimension to be considerd negative
+        """
+        # set data
+        self.X = data
+
+        # set negatibe control
+        self.negative_remover = transform_lib.RemoveNegativeTransformer(negative_control, range=negative_range)
+        self.negative_control = negative_control
+        _ = self.negative_remover.transform(self.X)
         self.No_neg_mask = self.negative_remover.mask
+
+
+        # detect outliers
+        outlier_detector = IsolationForest(contamination=self.outlier_quantile,
+                                            n_jobs=3,
+                                            max_samples=self.X.shape[0],
+                                            n_estimators=10)
+        outliers_labels = outlier_detector.fit_predict(self.X)
+        outliers_mask = outliers_labels < 0
+
+        # compute zero dimensions
+        self.neg_dimensions = np.percentile(self.X[outliers_mask],99.99,axis=0) <= 10000
         
         # remove outliers and create clusters
-        cluster_labels_no_neg = self.get_clusters_and_outlier(X_no_neg, self.cluster_algorithm, contamination=self.contamination)
-        self.cluster_labels = np.zeros_like(self.No_neg_mask, dtype=int)
-        self.cluster_labels[self.No_neg_mask] = cluster_labels_no_neg
-        self.cluster_labels[np.logical_not(self.No_neg_mask)] = np.max(cluster_labels_no_neg) + 1 # negative control range is last cluster
+        self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
         self.cluster_dict : Dict[int, transform_lib.Cluster] = self.split_clusters(data=self.X,labels=self.cluster_labels)
         
         # transform data accoring to clusters
@@ -93,22 +148,14 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         cluster_means_no_outlier = np.stack([self.cluster_dict[k].mean for k in cluster_dict_no_outlier], axis=0)
         self.whitening_transformer.fit(cluster_means_no_outlier)
         self.X_transformed = self.whitening_transformer.transform(self.X)
-        
+
         # add transformed properties to clusters
         self.cluster_dict = self.add_transformed(self.X_transformed, self.cluster_dict)
-        
-        # make cluster predictions ==> use non-tranformed data
-        self.cluster_dict = self.predict_cluster_labels(self.X, clusters=self.cluster_dict, eps=self.eps)
-
-        # generate label predicitions
-        self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
-        self.predictions[self.cluster_labels < 0,:] = -1
-        
-        # add labels to predictions here we use the domain knowledge to label predictions
-        self.predictions_df = pd.DataFrame(data = self.predictions, columns=self.prediction_axis)
     
-        return self.predictions_df
-    
+   ################################################
+   # LOW LEVEL METHODS
+   ################################################ 
+        
     def predict_labels(self,
                         clusters : Dict[int, transform_lib.Cluster],
                         data : npt.ArrayLike) -> npt.NDArray:
@@ -143,29 +190,29 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
         return clusters
 
-    def add_transformed(self, data_t: npt.ArrayLike, clusters : Dict[int,transform_lib.Cluster]) -> Dict[int, transform_lib.Cluster]:
+    def add_transformed(self, data_t: npt.ArrayLike, clusters : Dict[int,transform_lib.Cluster], percentile = 0.01) -> Dict[int, transform_lib.Cluster]:
+        percentile = percentile * 100
         for k in clusters.keys():
-            clusters[k].mean = np.mean(data_t[clusters[k].mask,:], axis=0)
-            clusters[k].max = np.max(data_t[clusters[k].mask,:], axis=0)
-            clusters[k].min = np.min(data_t[clusters[k].mask,:], axis=0)
+            clusters[k].mean_t = np.mean(data_t[clusters[k].mask,:], axis=0)
+            clusters[k].max_t = np.max(data_t[clusters[k].mask,:], axis=0)
+            clusters[k].min_t = np.min(data_t[clusters[k].mask,:], axis=0)
+            clusters[k].low_perc_t = np.percentile(data_t[clusters[k].mask,:], axis=0, q=percentile)
+            clusters[k].high_perc_t = np.percentile(data_t[clusters[k].mask,:], axis=0, q=100-percentile)
         
         return clusters
     
-    def get_clusters_and_outlier(self, data : npt.ArrayLike, cluster_engine : ClusterMixin, get_outliers=True, contamination = 0.001) -> npt.NDArray:
-
-        if get_outliers:
-            outlier_detector = IsolationForest(contamination=contamination,
-                                               n_jobs=4,
-                                               max_samples=data.shape[0],
-                                               n_estimators=10)
-            labels = outlier_detector.fit_predict(data) # outliers will get label -1
-            labels[labels >= 0] = cluster_engine.fit_predict(data[labels >= 0])
-        else:
-            labels = cluster_engine.fit_predict(data)
-        
+    def get_clusters(self, data : npt.NDArray, cluster_engine : ClusterMixin, outliers_mask : npt.NDArray, no_neg_mask : npt.NDArray) -> npt.NDArray:
+        labels = np.zeros_like(no_neg_mask, dtype=int)
+        labels = np.ones(data.shape[0]) * (-1)
+        labels[~outliers_mask & no_neg_mask] = cluster_engine.fit_predict(data[~outliers_mask & no_neg_mask])
+        labels[np.logical_not(no_neg_mask)] = np.max(labels) + 1 # negative control range is last cluster
         return labels
     
-    def select_max_dimensions(self, clusters : Dict[int, transform_lib.Cluster], num_active : np.ndarray, dimensions : np.ndarray, dim : int) -> np.ndarray:
+    def select_max_dimensions(self, clusters : Dict[int, transform_lib.Cluster],
+                              num_active : np.ndarray,
+                              dimensions : np.ndarray,
+                              dim : int,
+                              zero_dimensions : npt.ArrayLike) -> List[np.ndarray]:
         """
         Given that we know the number of dimensions the clusters are active to classify them we only select the number of dimensions
         they are active in
@@ -175,6 +222,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
             num_active (float): classification accroding to number fo active labels
             dimensions (float): min-max for each dimension across all clusters
             dim : dimensionality of clusters        
+            zero_dimensions (npt.ArrayLike): Indicator array for zero dimensions
         """
 
         assert len(clusters) == len(num_active), "Inconsistent number of labellings for clusters"
@@ -192,12 +240,11 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
                 temp = np.argsort(-np.divide(clusters[i].mean, dimensions))[:num_active[i]]
 
                 for j in temp:
-                    active[i][j] = True
+                    if not zero_dimensions[j]:
+                        active[i][j] = True
 
         return active
 
-
-    
     def compute_hierarchy(self, comparators : np.ndarray,  n_clusters : int, dim : int) -> Dict[int, transform_lib.Cluster]:
     
         # consider all pairs of clusters
@@ -275,18 +322,21 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
     
         return comparators
     
-    def predict_cluster_labels(self,data : npt.ArrayLike, clusters : Dict[int, transform_lib.Cluster], eps : float) -> Dict[int, transform_lib.Cluster]:
+    def predict_cluster_labels(self,data : npt.ArrayLike,
+                               clusters : Dict[int, transform_lib.Cluster],
+                               eps : float,
+                               zero_dimensions : npt.ArrayLike) -> Dict[int, transform_lib.Cluster]:
         """Predict labels for eac cluster and store them in the cluter dictionary
 
         Args:
             data (array_like): All data points
-            clusters (Dict[int, Clusters]): Dict containing the clusters
+            clusters (Dict[int, Cluters]): Dict containing the clusters
             eps (float): factor for the minimal disance relative to the max cluter means
+            zero_dimensions (npt.ArrayLike): Indicator array for zero dimensions
 
         Returns:
             np.ndarray: Indicators for diseases present in each cluster
         """
-        
         clusters_tmp = clusters.copy()
         
         clusters_tmp.pop(-1, None) # get rid of outliers
@@ -305,7 +355,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
         comparators = self.compute_comparators(clusters_tmp, dimensions, eps, dim)
         hierarchy = self.compute_hierarchy(comparators, n_clusters, dim)
-        labels = self.select_max_dimensions(clusters_tmp, hierarchy, dimensions, dim)
+        labels = self.select_max_dimensions(clusters_tmp, hierarchy, dimensions, dim, zero_dimensions=zero_dimensions)
 
         for i in range(n_clusters):
             clusters[i].labels = labels[i]

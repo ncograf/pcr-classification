@@ -46,10 +46,8 @@ class WhitnesDensityClassifier(BaseEstimator):
                  whitening_transformer : TransformerMixin = transform_lib.WhitenTransformer(transform_lib.Whitenings.NONE),
                  negative_control : npt.ArrayLike = None,
                  eps : float = 1.7,
-                 maximal_contamination : float = 0.5,
                  outlier_quantile: float = 0.001,
                  negative_range: float = 0.9,
-                 outliers : bool = True,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
                  verbose = False):
         """Initialize classifier with important parameters
@@ -87,7 +85,6 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.eps = eps
         self.outlier_quantile = outlier_quantile
         self.neg_dimensions = None
-        self.get_outlier = outliers
         self.verbose = verbose
         self.thresh = 0.5
         self.probabilities_df = None
@@ -167,7 +164,7 @@ class WhitnesDensityClassifier(BaseEstimator):
         outliers_mask = outliers_labels < 0
 
         # compute zero dimensions
-        self.neg_dimensions = np.all(self.X[outliers_mask] <= 1000, axis=0)
+        self.neg_dimensions = np.percentile(self.X[outliers_mask],99,axis=0) <= 10000
         
         # remove outliers and create clusters
         self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
