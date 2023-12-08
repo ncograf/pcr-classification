@@ -1,6 +1,7 @@
 import data_lib
 from typing import List
 from tkinter_classes import ScrollableInputFrame, ScrollablePlotSelectFrame
+from negative_dimnesion_detection import get_negative_dimensions
 from icecream import ic
 import tkinter as tk    
 import customtkinter as ctk
@@ -31,8 +32,8 @@ class TkinterSession():
 
         self.numplots = 6
         self.decision = None
-        self.min_threshold = 0.5
-        self.max_threshold = 0.7
+        self.min_threshold = 0.1
+        self.max_threshold = 0.9
         self.settings_dir = Path(Path.home(),".pcr_conc")
         self.settings_path = Path(self.settings_dir,"settings.csv")
         self.axis_map_path = Path(self.settings_dir,"axis_map.csv")
@@ -43,18 +44,18 @@ class TkinterSession():
             "eps" : 0.3,
             "outliers" : 0.001, 
             "nc_outliers" : 0.01,
-            "max_contamination" : 0.5,
             "neg_ignore" : 0.9,
             "num_plot_points" : 10000,
+            "algorithm" : "Hierarchy",
             }
 
         axis_map_default = {
-            "Chan1_FluoValue" : 'SARS-N2_POS',
-            "Chan2_FluoValue" : 'SARS-N1_POS',
-            "Chan3_FluoValue" : 'IBV-M_POS',
-            "Chan4_FluoValue" : 'RSV-N_POS',
-            "Chan5_FluoValue" : 'IAV-M_POS',
-            "Chan6_FluoValue" : 'MHV_POS',
+            "Chan1_FluoValue" : 'SARS-N2',
+            "Chan2_FluoValue" : 'SARS-N1',
+            "Chan3_FluoValue" : 'IBV-M',
+            "Chan4_FluoValue" : 'RSV-N',
+            "Chan5_FluoValue" : 'IAV-M',
+            "Chan6_FluoValue" : 'MHV',
         }
         return settings_dict_default, axis_map_default
     
@@ -64,9 +65,9 @@ class TkinterSession():
             tk.IntVar(master, None, "num_plot_points"),
             tk.DoubleVar(master, None, "outliers"),
             tk.DoubleVar(master, None, "nc_outliers"),
-            tk.DoubleVar(master, None, "max_contamination"),
             tk.DoubleVar(master, None, "neg_ignore"),
-            tk.StringVar(master, None, "output_path")
+            tk.StringVar(master, None, "output_path"),
+            tk.StringVar(master, None, "algorithm"),
         ]
         for m in settings_list:
             self.settings_vars[str(m)] = m
@@ -109,11 +110,9 @@ class TkinterSession():
         neg_data = neg_data.loc[:, self.file_data.columns]
         
         acceptable_contamination = self.settings_vars["nc_outliers"].get()
-        maximal_expected_contamination = self.settings_vars["max_contamination"].get()
         
-        neg_dims, _ = decision_lib.WhitnesDensityClassifier.get_negative_dimensions(neg_data,
-                                                                                    acceptable_contamination=acceptable_contamination,
-                                                                                    maximal_expected_contamination=maximal_expected_contamination)
+        neg_dims, _ = get_negative_dimensions(neg_data, outliers_percentile=acceptable_contamination)
+        neg_dims = neg_dims <= 0.01 
 
         if np.any(~neg_dims):
             raise NotNegError(f"File list {file_list} contains cluster which are contaminated!")
@@ -195,15 +194,22 @@ class TkinterSession():
         
         outlier_quantile = self.settings_vars["outliers"].get()
         negative_range = self.settings_vars["neg_ignore"].get()
-        max_pos_amount = self.settings_vars["max_contamination"].get()
 
-        self.decision = decision_lib.WhitnesDensityClassifier(
-                                              cluster_algorithm=cluster_engine,
-                                              whitening_transformer=whitening_engine,
-                                              outlier_quantile=outlier_quantile,
-                                              maximal_contamination=max_pos_amount,
-                                              verbose=True,
-                                              )
+        if self.settings_vars["algorithm"].get() == "Hierarchy":
+            self.decision = decision_lib.ClusterRelativeHierarchyMeanClassifier(
+                                                cluster_algorithm=cluster_engine,
+                                                whitening_transformer=whitening_engine,
+                                                contamination=outlier_quantile,
+                                                negative_range=negative_range,
+                                                )
+        else:
+            self.decision = decision_lib.WhitnesDensityClassifier(
+                                                cluster_algorithm=cluster_engine,
+                                                whitening_transformer=whitening_engine,
+                                                outlier_quantile=outlier_quantile,
+                                                negative_range=negative_range,
+                                                verbose=True,
+                                                )
 
         self.decision.read_data(np_data,np_neg,negative_range)
     

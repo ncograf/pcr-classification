@@ -45,6 +45,8 @@ class ctkApp:
         self.tab_plots.grid_rowconfigure(1,weight=2)
 
         self.tab_settings = self.tab_view.add("Settings")
+        self.tab_settings.grid_columnconfigure(0,weight=1,uniform=1)
+        self.tab_settings.grid_rowconfigure(0,weight=1,uniform=1)
         
         ###############################
         # Experiments
@@ -68,10 +70,10 @@ class ctkApp:
         self.control_frame.grid_columnconfigure(0,weight=25)
         self.control_frame.grid_columnconfigure(1,weight=15)
 
-        button_pad = 10
-        pad_x = 20
-        pad_x_inter = 10
-        pad_y_inter = 3
+        self.button_pad = 10
+        self.pad_x = 20
+        self.pad_x_inter = 10
+        self.pad_y_inter = 3
         button_height = self.font[1] + 15
         rowcnt = 0
 
@@ -79,7 +81,7 @@ class ctkApp:
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        self.experiment_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        self.experiment_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.files_button = ctk.CTkButton(master = self.control_frame,
@@ -87,7 +89,7 @@ class ctkApp:
                                font=self.font,
                                height=button_height,
                                command=self.select_files)
-        self.files_button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        self.files_button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
         self.orig_button_color = self.files_button.cget("fg_color")
         rowcnt = rowcnt+1
 
@@ -96,14 +98,14 @@ class ctkApp:
                                height=button_height,
                                font=self.font,
                                command=self.select_neg)
-        self.neg_button.grid(row=rowcnt,column=0,padx=(pad_x,pad_x_inter),pady=(button_pad,0), sticky="news" )
+        self.neg_button.grid(row=rowcnt,column=0,padx=(self.pad_x,self.pad_x_inter),pady=(self.button_pad,0), sticky="news" )
 
         self.neg_button_cancel = ctk.CTkButton(master = self.control_frame,
                                text="Unselect",
                                height=button_height,
                                font=self.font,
                                command=self.cancel_neg)
-        self.neg_button_cancel.grid(row=rowcnt,column=1,padx=(pad_x_inter,pad_x),pady=(button_pad,0), stick="news")
+        self.neg_button_cancel.grid(row=rowcnt,column=1,padx=(self.pad_x_inter,self.pad_x),pady=(self.button_pad,0), stick="news")
         rowcnt = rowcnt+1
 
         self.cluster_buttton = ctk.CTkButton(master = self.control_frame,
@@ -111,59 +113,78 @@ class ctkApp:
                                font=self.font,
                                height=button_height,
                                command=self.compute_clusters)
-        self.cluster_buttton.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        self.cluster_buttton.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.axis_name_title = ctk.CTkLabel(self.control_frame, text="Choose Axis Names:",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        self.axis_name_title.grid(row=rowcnt, column=0, columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        self.axis_name_title.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.axis_name_frame = ScrollableInputFrame(master=self.control_frame,
                                                     corner_radius=0,
                                                     font=self.font,
                                                     )
-        self.axis_name_frame.grid(row=rowcnt, column=0, columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        self.axis_name_frame.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        label = ctk.CTkLabel(self.control_frame, text="Choose algorithm",
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+        
+        self.algo_switch = ctk.CTkSwitch(master=self.control_frame,
+                                         text="",
+                                         command=self.algo_switch_event,
+                                         variable=self.session.settings_vars["algorithm"],
+                                         onvalue="Hierarchy", offvalue="Witness")
+        self.algo_switch.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        label = ctk.CTkLabel(self.control_frame, textvariable=self.session.settings_vars["algorithm"],
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        label.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.pad_y_inter,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.slider_label = ctk.CTkLabel(self.control_frame, text="Choose relative distance eps",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        self.slider_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.slider = ctk.CTkSlider(master=self.control_frame, from_=0, to=1, number_of_steps=50, variable=self.session.settings_vars["eps"])
-        self.slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
         self.slider_display = ctk.CTkEntry(master=self.control_frame,
                                 font=self.font,
                                 textvariable=self.session.settings_vars["eps"],
                                     justify='center',
                             )
-        self.slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        self.eps_cnt = rowcnt
         rowcnt = rowcnt+1
+        self.algo_switch_event()  # positioning is done in here
 
         self.plot_title = ctk.CTkLabel(self.control_frame, text="Plot setup",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        self.plot_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(pad_y_inter,0), sticky="news")
+        self.plot_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.plot_selection = ScrollablePlotSelectFrame(master=self.control_frame,
                                                     corner_radius=0,
                                                     font=self.font,
                                                     )
-        self.plot_selection.grid(row=rowcnt, column=0, columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="ew")
+        self.plot_selection.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="ew")
         rowcnt = rowcnt+1
 
         self.plot_point_slider_label = ctk.CTkLabel(self.control_frame, text="Number of points to be plotted",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        self.plot_point_slider_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        self.plot_point_slider_label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.plot_point_slider = ctk.CTkSlider(master=self.control_frame,
@@ -171,13 +192,13 @@ class ctkApp:
                                                to=1,
                                                number_of_steps=50,
                                                variable=self.session.settings_vars["num_plot_points"])
-        self.plot_point_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        self.plot_point_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         self.plot_point_slider_display = ctk.CTkEntry(master=self.control_frame,
                                 font=self.font,
                                 textvariable=self.session.settings_vars["num_plot_points"],
                                     justify='center',
                             )
-        self.plot_point_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        self.plot_point_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.compute_button = ctk.CTkButton(master = self.control_frame,
@@ -185,7 +206,7 @@ class ctkApp:
                                height=button_height,
                                font=self.font,
                                command=self.compute)
-        self.compute_button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        self.compute_button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.compute_button = ctk.CTkButton(master = self.control_frame,
@@ -193,7 +214,7 @@ class ctkApp:
                                height=button_height,
                                font=self.font,
                                command=self.export)
-        self.compute_button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        self.compute_button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
         
         # configure results
@@ -201,7 +222,7 @@ class ctkApp:
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        self.plot_title.grid(row=0, column=0, padx=(pad_x,pad_x), pady=(pad_y_inter,pad_y_inter), sticky="news")
+        self.plot_title.grid(row=0, column=0, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,self.pad_y_inter), sticky="news")
         
         #############################
         # End Experiments
@@ -210,52 +231,74 @@ class ctkApp:
         #############################
         # Settings
         #############################
-        self.settings_frame = ctk.CTkFrame(master=self.tab_settings)
+        self.settings_frame = ctk.CTkFrame(master=self.tab_settings, width=400)
         self.settings_frame.grid(column=0,row=0, sticky="snwe",pady=(5,0), padx=(5,5))
         self.settings_frame.grid_columnconfigure(0,weight=1,uniform=1)
-        self.settings_frame.grid_rowconfigure(0,weight=1,uniform=1)
 
         rowcnt=0
         tmp_title = ctk.CTkLabel(self.settings_frame, text="General computation",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="ew")
+        rowcnt = rowcnt+1
+
+        tmp_textbox = ctk.CTkTextbox(self.settings_frame,
+                             font=self.font,
+                             wrap='word',
+                             )
+        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.tag_config("center", justify="center")
+        tmp_textbox.insert(0.0,text=r"""
+                            Generally we work under the following assumptions:
+                            1. Let D be the set of dimensions. If for a sample there exists points
+                            which are positive in $S \subseteq D$. Then we assume that for every
+                            $S' \subset S$ there exists a 'cluster' of points only positive in $S'$.
+
+                            2. Based on based on previous assumption, let $c$ be a 'cluster' of points
+                            positive in $S \subseteq D$ and $c'$ positive in $S' \subset S$, then
+                            we have that the mean of $c$ is larger equal the mean of $c'$ in all
+                            dimensions (this expresses that we expect only positive correlations)
+
+                            3. Samples for which the values in one dimension do not exceed the
+                            absolute value 10000 after outlier removal are negative in this dimension.
+                            """
+                           )
         rowcnt = rowcnt+1
         
         self.outliers = ctk.CTkLabel(self.settings_frame, text="Outlier percentile (amount of outlier points to be removed)",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        self.outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        self.outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.1, number_of_steps=500, variable=self.session.settings_vars["outliers"])
-        self.outliers_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        self.outliers_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         self.outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
                                 textvariable=self.session.settings_vars["outliers"],
                                     justify='center',
                             )
-        self.outliers_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        self.outliers_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        tmp_label = ctk.CTkLabel(self.settings_frame, wraplength=500, text="Negative threshhold (points which are below that number times "
-                                 + "the max of the zero cluster in all dimensions are ignored (only used for speedup))",
+        tmp_label = ctk.CTkLabel(self.settings_frame, wraplength=600, text="Negative threshhold (points which are below that number times "
+                                 + "the max of the zero cluster in all dimensions are ignored.)",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["neg_ignore"])
-        tmp_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        tmp_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         tmp_display = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
                                 textvariable=self.session.settings_vars["neg_ignore"],
                                     justify='center',
                             )
-        tmp_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        tmp_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
 
@@ -263,22 +306,42 @@ class ctkApp:
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         rowcnt = rowcnt+1
 
         tmp_textbox = ctk.CTkTextbox(self.settings_frame,
                              font=self.font,
                              wrap='word',
                              )
-        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
-        tmp_textbox.insert(0.0,text="The assumptions here are first, that `max_contamination` are contaminated in each dimension, " +
-                           "second, we assume a `even` distribution of the which are negative in each dimension.  " +
-                           "\nThen we assume a sample not to be contaminated in one dimension if a percentile of (1-max_contamination) " +
-                           "points covers at least 0.5 * (1 - max_contamination) points." +
-                           "\nThe factor 0.5 is chosen heristically to account for some skew in the distribution and variance over possible samples." +
-                           "\n\nNote that larger values of `max_contamination` will relax the first assumption with the cost of a more restrictive " +
-                           "second assumption." + 
-                           "This assumption does not hold on for example some of the dillution datasets."
+        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.insert(0.0,text="""
+                            This works under the assumption that points are normally distributed
+                            in dimension in which all are negative and not normally distributed in dimensions,
+                            where all some positive.
+                            
+                            Under this assumption we make a normaltest
+                            https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.normaltest.html
+                            
+                            According to experiments performed on each chamber on the given data available for coding,
+                            we found that dimensions in which we found only a negative cluster the test statistic takes
+                            in average and a standard deviation (over all samples and dimensions
+                            in which a dimension only contains a negative cluster) of
+                            mean: 1.54
+                            std: 1.26
+                            As opposed to samples and dimensions in which there exist positive droples:
+                            mean: 0.077
+                            std: 0.088
+                            On negative contols we even have
+                            mean: 0.036
+                            std: 0.034
+                            
+                            By this clear distinction, it is reasonable to distinguish based on this statistic.
+                            We consider samples (dimension in one sample) to have a probability of 0.99
+                            that they correspond to the given class (all negative, some positive).
+                            Then we further assume that in the middle of the two means we have a
+                            probability of 0.5. Using this, we then fit a sigmoid and return the result
+                            for a new cluster.
+                            """
                            )
         rowcnt = rowcnt+1
 
@@ -286,57 +349,47 @@ class ctkApp:
                              justify='center',
                              font=self.font,
                              anchor="center")
-        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-        tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["max_contamination"])
-        tmp_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
-        tmp_display = ctk.CTkEntry(master=self.settings_frame,
-                                font=self.font,
-                                textvariable=self.session.settings_vars["max_contamination"],
-                                    justify='center',
-                            )
-        tmp_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.nc_outliers = ctk.CTkLabel(self.settings_frame, text="What is the amount of outliers not to be considered in the negative control detection",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        self.nc_outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
+        self.nc_outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.nc_outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.01, number_of_steps=500, variable=self.session.settings_vars["nc_outliers"])
-        self.nc_outliers_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
+        self.nc_outliers_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         self.nc_outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
                                 textvariable=self.session.settings_vars["nc_outliers"],
                                     justify='center',
                             )
-        self.nc_outliers_slider_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
+        self.nc_outliers_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         tmp_title = ctk.CTkLabel(self.settings_frame, text="Export Settings",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
 
         
         rowcnt = rowcnt+1
         button = ctk.CTkButton(master = self.settings_frame,
-                               text="export directory (exported results will be stored there)",
+                               text="Export directory (exported results will be stored there)",
                                height=button_height,
                                font=self.font,
                                command=self.choose_output_dir)
-        button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad,0), sticky="news")
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         label = ctk.CTkLabel(self.settings_frame, textvariable=self.session.settings_vars["output_path"],
                              justify='center',
                              font=self.font,
                              anchor="center")
-        label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(pad_y_inter,0), sticky="news")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,0), sticky="news")
         rowcnt = rowcnt+1
 
         button = ctk.CTkButton(master = self.settings_frame,
@@ -344,7 +397,7 @@ class ctkApp:
                                height=button_height,
                                font=self.font,
                                command=self.save_default)
-        button.grid(row=rowcnt,column=0, columnspan=2,padx=(pad_x,pad_x),pady=(button_pad + 20,0), sticky="news")
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad + 20,0), sticky="news")
         rowcnt = rowcnt+1
         
         
@@ -356,7 +409,34 @@ class ctkApp:
 
         self.root.mainloop()
    
-   
+    def algo_switch_event(self):
+        
+        # force recompute
+        self.session.decision = None
+        self.cluster_buttton.configure(require_redraw=True, fg_color=self.orig_button_color)
+
+        if self.session.settings_vars["algorithm"].get() == "Hierarchy":
+            self.slider.grid_forget()
+            self.slider_label.grid_forget()
+            self.slider_display.grid_forget()
+            self.slider.configure(state="disabled")
+            self.slider_display.configure(state="disabled")
+        else:
+            self.slider.configure(state="normal")
+            self.slider_display.configure(state="normal")
+            self.slider.grid(row=self.eps_cnt, column=0,
+                             padx=(self.pad_x,0),
+                             pady=(self.button_pad,0),
+                             sticky="news")
+            self.slider_display.grid(row=self.eps_cnt,
+                                     column=1, 
+                                     padx=(self.pad_x_inter,self.pad_x),
+                                     pady=(self.button_pad,0), sticky="news")
+            self.slider_label.grid(row=self.eps_cnt-1,
+                                   column=0,
+                                   columnspan=2,
+                                   padx=(self.pad_x,self.pad_x),
+                                   pady=(self.button_pad,0), sticky="news")
    
    
     

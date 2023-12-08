@@ -280,8 +280,8 @@ def plot_pairwise_selection_bayesian(
         x_features = data_points.loc[mask, col_one].to_numpy()
         y_features = data_points.loc[mask, col_two].to_numpy()
 
-        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
-        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+        ax[i // n_cols, i % n_cols].set_xlabel(col_one, loc="left")
+        ax[i // n_cols, i % n_cols].set_ylabel(col_two, loc="top")
         ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
         if not axis_thresh is None:
             ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
