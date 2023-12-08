@@ -176,17 +176,23 @@ def plot_pairwise_selection(
         # false positives = 1, false negatives = -1
         true_labels = ground_trouth.loc[mask,col_one].to_numpy()
         pred_labels = predictions.loc[mask,col_one].to_numpy()
-        false_labels = pred_labels - true_labels
         
         # create colors
-        color_labels = pd.Series(true_labels, copy=True, dtype=str)
-        color_labels.iloc[true_labels == 1] = '#15B01A' # green
-        color_labels.iloc[true_labels == 0] = '#000000' # black
-        color_labels.iloc[false_labels == 1] = '#E50000' # red
-        color_labels.iloc[false_labels == -1] = '#7E1E9C' # purple
+        yellow = np.array((255,255,0), dtype=np.float32) / 255 #'FFFF33'  ugly yellow
+        green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
+        tp_value = np.einsum("i,j->ji", green, pred_labels)
+        black = np.array((0,0,0),dtype=np.float32) / 255 # black #000000
+        tn_value = np.einsum("i,j->ji",yellow,  (1 - pred_labels))
+        red = np.array((229,0,0), np.float32) / 255 # red #E50000
+        fp_value = np.einsum("i,j->ji",red, pred_labels) 
+        purple = np.array((126, 30 ,156), np.float32) / 255 # purple #7E1E9C
+        fn_value = np.einsum("i,j->ji",purple,  (1 - pred_labels))
+        positive_contributions = np.einsum("jc,j->jc", tp_value + fn_value, (true_labels == 1))
+        negative_contributions = np.einsum("jc,j->jc", fp_value + tn_value, (true_labels == 0))
+        color_labels = negative_contributions + positive_contributions
         
         # get outliers
-        color_labels.iloc[pred_labels < 0] = '#FFFF33'  # ugly yellow
+        color_labels[pred_labels < 0] = black
         
         
         x_features = data_points.loc[mask, col_one].to_numpy()
@@ -255,20 +261,21 @@ def plot_pairwise_selection_bayesian(
         pred_labels = predictions.loc[mask,col_one].to_numpy()
         
         # create colors
+        yellow = np.array((255,255,0), dtype=np.float32) / 255 #'FFFF33'  ugly yellow
         green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
-        green_value = np.einsum("i,j->ji", green, pred_labels)
+        tp_value = np.einsum("i,j->ji", green, pred_labels)
         black = np.array((0,0,0),dtype=np.float32) / 255 # black #000000
-        black_value = np.einsum("i,j->ji",black,  (1 - pred_labels))
-        red = np.array((229,0,0)) / 255 # red #E50000
-        red_value = np.einsum("i,j->ji",red, pred_labels) 
+        tn_value = np.einsum("i,j->ji",yellow,  (1 - pred_labels))
+        red = np.array((229,0,0), np.float32) / 255 # red #E50000
+        fp_value = np.einsum("i,j->ji",red, pred_labels) 
         purple = np.array((126, 30 ,156), np.float32) / 255 # purple #7E1E9C
-        purple_value = np.einsum("i,j->ji",purple,  (1 - pred_labels))
-        positive_contributions = np.einsum("jc,j->jc", green_value + purple_value, (true_labels == 1))
-        negative_contributions = np.einsum("jc,j->jc", red_value + black_value, (true_labels == 0))
+        fn_value = np.einsum("i,j->ji",purple,  (1 - pred_labels))
+        positive_contributions = np.einsum("jc,j->jc", tp_value + fn_value, (true_labels == 1))
+        negative_contributions = np.einsum("jc,j->jc", fp_value + tn_value, (true_labels == 0))
         color_labels = negative_contributions + positive_contributions
 
         # get outliers
-        color_labels[pred_labels < 0] = np.array((1,1,0)) #'FFFF33'  ugly yellow
+        color_labels[pred_labels < 0] = black
         
         x_features = data_points.loc[mask, col_one].to_numpy()
         y_features = data_points.loc[mask, col_two].to_numpy()
@@ -362,14 +369,15 @@ def plot_pairwise_selection_bayesian_no_gt(
         pred_labels = predictions.loc[mask,col_one].to_numpy()
         
         # create colors
+        yellow = np.array((255,255,0), dtype=np.float32) / 255 #'FFFF33'  ugly yellow
         green = np.array((21, 176, 26), dtype=np.float32) / 255  # green #15B01A
-        green_value = np.einsum("i,j->ji", green, pred_labels)
+        positive_value = np.einsum("i,j->ji", green, pred_labels)
         black = np.array((0,0,0),dtype=np.float32) / 255 # black #000000
-        black_value = np.einsum("i,j->ji",black,  (1 - pred_labels))
-        color_labels =  green_value + black_value
+        negative_value = np.einsum("i,j->ji",yellow,  (1 - pred_labels))
+        color_labels =  positive_value + negative_value
 
         # get outliers
-        color_labels[pred_labels < 0] = np.array((1,1,0)) #'FFFF33'  ugly yellow
+        color_labels[pred_labels < 0] = black
         
         x_features = data_points.loc[mask, col_one].to_numpy()
         y_features = data_points.loc[mask, col_two].to_numpy()
