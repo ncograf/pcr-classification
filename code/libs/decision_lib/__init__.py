@@ -20,6 +20,6 @@ __all__ = ["ThresholdClassifier",
            "ClusterHierarchyMeanClassifier",
            "ClusterHierarchyDensityClassifier",
            "ClusterRelativeHierarchyMeanClassifier",
-           "ClusterRelativeHierarchyMeanDenstiyClassifier",
-           "WhitnesDensityClassifier"
+           "ClusterRelativeHierarchyMeanDensityClassifier",
+           "WhitnesDensityClassifier",
              ]
