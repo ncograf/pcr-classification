@@ -21,11 +21,14 @@ def get_negative_dimensions(np_points : npt.NDArray,
     we found that dimensions in which we found only a negative cluster the test statistic takes
     in average and a standard deviation (over all samples and dimensions
     in which a dimension only contains a negative cluster) of
-    mean: 3247
-    std: 2657
+    mean: 1.54
+    std: 1.26
     As opposed to samples and dimensions in which there exist positive droples:
-    mean: 32887
-    std: 7189
+    mean: 0.077
+    std: 0.088
+    On negative contols we even have
+    mean: 0.036
+    std: 0.034
     
     By this clear distinction, it is reasonable to distinguish based on this statistic.
     We consider samples (dimension in one sample) to have a probability of 0.99
@@ -57,12 +60,13 @@ def get_negative_dimensions(np_points : npt.NDArray,
     s_max = np.max(np_points_no_outlier, axis=0)
     s_min = np.min(np_points_no_outlier, axis=0)
     r = s_max - s_min
+    n_points = np_points.shape[0]
 
-    statistic = sp.normaltest(np_points_no_outlier / r).statistic
+    statistic = sp.normaltest(np_points_no_outlier / r).statistic / n_points
     
     # this can be tuned to fit a different certainity curve
-    mean_statistic_negative = 3250
-    mean_statistic_positive = 32900
+    mean_statistic_negative = 0.1
+    mean_statistic_positive = 1.5
     certainity_at_means = 0.99
     
     distance = mean_statistic_positive - mean_statistic_negative
