@@ -222,6 +222,28 @@ class ctkApp:
                              anchor="center")
         tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
         rowcnt = rowcnt+1
+
+        tmp_textbox = ctk.CTkTextbox(self.settings_frame,
+                             font=self.font,
+                             wrap='word',
+                             )
+        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.insert(0.0,text=r"""
+                            Generally we work under the following assumptions:
+                            1. Let D be the set of dimensions. If for a sample there exists points
+                            which are positive in $S \subseteq D$. Then we assume that for every
+                            $S' \subset S$ there exists a 'cluster' of points only positive in $S'$.
+
+                            2. Based on based on previous assumption, let $c$ be a 'cluster' of points
+                            positive in $S \subseteq D$ and $c'$ positive in $S' \subset S$, then
+                            we have that the mean of $c$ is larger equal the mean of $c'$ in all
+                            dimensions (this expresses that we expect only positive correlations)
+
+                            3. Samples for which the values in one dimension do not exceed the
+                            absolute value 10000 after outlier removal are negative in this dimension.
+                            """
+                           )
+        rowcnt = rowcnt+1
         
         self.outliers = ctk.CTkLabel(self.settings_frame, text="Outlier percentile (amount of outlier points to be removed)",
                              justify='center',
@@ -271,14 +293,34 @@ class ctkApp:
                              wrap='word',
                              )
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(5,0), sticky="news")
-        tmp_textbox.insert(0.0,text="The assumptions here are first, that `max_contamination` are contaminated in each dimension, " +
-                           "second, we assume a `even` distribution of the which are negative in each dimension.  " +
-                           "\nThen we assume a sample not to be contaminated in one dimension if a percentile of (1-max_contamination) " +
-                           "points covers at least 0.5 * (1 - max_contamination) points." +
-                           "\nThe factor 0.5 is chosen heristically to account for some skew in the distribution and variance over possible samples." +
-                           "\n\nNote that larger values of `max_contamination` will relax the first assumption with the cost of a more restrictive " +
-                           "second assumption." + 
-                           "This assumption does not hold on for example some of the dillution datasets."
+        tmp_textbox.insert(0.0,text="""
+                            This works under the assumption that points are normally distributed
+                            in dimension in which all are negative and not normally distributed in dimensions,
+                            where all some positive.
+                            
+                            Under this assumption we make a normaltest
+                            https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.normaltest.html
+                            
+                            According to experiments performed on each chamber on the given data available for coding,
+                            we found that dimensions in which we found only a negative cluster the test statistic takes
+                            in average and a standard deviation (over all samples and dimensions
+                            in which a dimension only contains a negative cluster) of
+                            mean: 1.54
+                            std: 1.26
+                            As opposed to samples and dimensions in which there exist positive droples:
+                            mean: 0.077
+                            std: 0.088
+                            On negative contols we even have
+                            mean: 0.036
+                            std: 0.034
+                            
+                            By this clear distinction, it is reasonable to distinguish based on this statistic.
+                            We consider samples (dimension in one sample) to have a probability of 0.99
+                            that they correspond to the given class (all negative, some positive).
+                            Then we further assume that in the middle of the two means we have a
+                            probability of 0.5. Using this, we then fit a sigmoid and return the result
+                            for a new cluster.
+                            """
                            )
         rowcnt = rowcnt+1
 
@@ -287,16 +329,6 @@ class ctkApp:
                              font=self.font,
                              anchor="center")
         tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(pad_x,pad_x), pady=(button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-        tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["max_contamination"])
-        tmp_slider.grid(row=rowcnt, column=0, padx=(pad_x,0), pady=(button_pad,0), sticky="news")
-        tmp_display = ctk.CTkEntry(master=self.settings_frame,
-                                font=self.font,
-                                textvariable=self.session.settings_vars["max_contamination"],
-                                    justify='center',
-                            )
-        tmp_display.grid(row=rowcnt, column=1, padx=(pad_x_inter,pad_x), pady=(button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.nc_outliers = ctk.CTkLabel(self.settings_frame, text="What is the amount of outliers not to be considered in the negative control detection",

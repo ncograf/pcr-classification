@@ -157,12 +157,6 @@ class WhitnesDensityClassifier(BaseEstimator):
         _ = self.negative_remover.transform(self.X)
         self.No_neg_mask = self.negative_remover.mask
 
-        # compute zero dimensions
-        postitive_dimension_probs, statistic = get_negative_dimensions(self.X, outliers_percentile=self.outlier_quantile)
-        ic(statistic)
-        ic(postitive_dimension_probs)
-        self.neg_dimensions = postitive_dimension_probs <= 0.5
-        
 
         # detect outliers
         outlier_detector = IsolationForest(contamination=self.outlier_quantile,
@@ -171,6 +165,9 @@ class WhitnesDensityClassifier(BaseEstimator):
                                             n_estimators=10)
         outliers_labels = outlier_detector.fit_predict(self.X)
         outliers_mask = outliers_labels < 0
+
+        # compute zero dimensions
+        self.neg_dimensions = np.all(self.X[outliers_mask] <= 1000, axis=0)
         
         # remove outliers and create clusters
         self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
