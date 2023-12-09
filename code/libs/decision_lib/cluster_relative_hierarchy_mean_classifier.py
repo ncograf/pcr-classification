@@ -9,6 +9,7 @@ from sklearn.ensemble import IsolationForest
 from typing import Dict, List
 from icecream import ic
 from enum import Enum
+from math import comb
 
 class Comparator(Enum):
         MUCHSMALLER = -2
@@ -23,10 +24,12 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
                  cluster_algorithm : ClusterMixin,
                  whitening_transformer : TransformerMixin,
                  negative_control : npt.ArrayLike = None,
-                 eps : float = 1.7,
+                 eps : float = 0.5,
                  contamination : float = 0.001,
                  negative_range: float = 0.9,
-                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']):
+                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
+                 noeps = False
+                 ):
         """Initialize classifier with important parameters
 
             The algorithm is based on the three assumption:
@@ -62,6 +65,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         self.probabilities_df = None
         self.X = None
         self.predictions_df = None
+        self.noeps = noeps
 
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
@@ -95,8 +99,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         # make cluster predictions ==> use non-tranformed data
         self.cluster_dict = self.predict_cluster_labels(self.X_transformed,
                                                         clusters=self.cluster_dict,
-                                                        eps=self.eps,
-                                                        zero_dimensions=self.neg_dimensions)
+                                                        eps=self.eps)
 
         # generate label predicitions
         self.predictions = self.predict_labels(clusters=self.cluster_dict, data=self.X)
@@ -211,8 +214,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
     def select_max_dimensions(self, clusters : Dict[int, transform_lib.Cluster],
                               num_active : np.ndarray,
                               dimensions : np.ndarray,
-                              dim : int,
-                              zero_dimensions : npt.ArrayLike) -> List[np.ndarray]:
+                              dim : int) -> List[np.ndarray]:
         """
         Given that we know the number of dimensions the clusters are active to classify them we only select the number of dimensions
         they are active in
@@ -222,7 +224,6 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
             num_active (float): classification accroding to number fo active labels
             dimensions (float): min-max for each dimension across all clusters
             dim : dimensionality of clusters        
-            zero_dimensions (npt.ArrayLike): Indicator array for zero dimensions
         """
 
         assert len(clusters) == len(num_active), "Inconsistent number of labellings for clusters"
@@ -236,12 +237,15 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         for i in range(n_clusters):
 
             if (num_active[i] > 0):
-                # scale the dimensions and find the largest ones
-                temp = np.argsort(-np.divide(clusters[i].mean, dimensions))[:num_active[i]]
+                # exclude unused dimensions
+                temp = np.multiply(clusters[i].mean, np.invert(self.neg_dimensions))
 
+                # scale the dimensions and find the largest ones
+                temp = np.argsort(-np.divide(temp, dimensions))[:num_active[i]]
+
+                # mark the num_active[i] highest dimensions as active
                 for j in temp:
-                    if not zero_dimensions[j]:
-                        active[i][j] = True
+                    active[i][j] = True
 
         return active
 
@@ -279,8 +283,6 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
                 if base_superior:
                     hierarchy[base] = rank + 1
 
-        print(hierarchy)
-    
         return hierarchy
     
     
@@ -303,6 +305,10 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
             for j in range(n_clusters):
                 for k in range(dim):
 
+                    # skip inactive dimension
+                    if k in self.neg_dimensions:
+                        continue
+
                     # compare cluster i against cluster j in every dimension
                     if ((clusters[i].mean[k] - clusters[j].mean[k]) > eps * dimensions[k]):
                         comparators[i][j][k] = Comparator.MUCHLARGER
@@ -324,15 +330,13 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
     
     def predict_cluster_labels(self,data : npt.ArrayLike,
                                clusters : Dict[int, transform_lib.Cluster],
-                               eps : float,
-                               zero_dimensions : npt.ArrayLike) -> Dict[int, transform_lib.Cluster]:
+                               eps : float) -> Dict[int, transform_lib.Cluster]:
         """Predict labels for eac cluster and store them in the cluter dictionary
 
         Args:
             data (array_like): All data points
             clusters (Dict[int, Cluters]): Dict containing the clusters
             eps (float): factor for the minimal disance relative to the max cluter means
-            zero_dimensions (npt.ArrayLike): Indicator array for zero dimensions
 
         Returns:
             np.ndarray: Indicators for diseases present in each cluster
@@ -340,23 +344,68 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         clusters_tmp = clusters.copy()
         
         clusters_tmp.pop(-1, None) # get rid of outliers
+
         n_clusters = len(clusters_tmp)
+        
+        if (n_clusters == 0):
+            return clusters
+        
         dim = data.shape[1]
+        # only relevant number of dimensions
+        new_dim = dim - np.count_nonzero(self.neg_dimensions)
 
         # compute axis scaling for each dimension, without considering outliers
-        temp = np.ndarray((dim, 2), dtype=float)
+        maximums = clusters_tmp[0].mean
+        minimums = clusters_tmp[0].mean
+
         for i in range(n_clusters):
             for k in range(dim):
-                temp[:, 0] = np.minimum(clusters_tmp[i].mean, temp[:, 0])
-                temp[:, 1] = np.maximum(clusters_tmp[i].mean, temp[:, 1])
+                minimums = np.minimum(clusters_tmp[i].mean, minimums)
+                maximums = np.maximum(clusters_tmp[i].mean, maximums)
 
-        dimensions = np.ndarray(dim, dtype=float)
-        dimensions = temp[:, 1]- temp[:, 0]
+        dimensions = maximums - minimums
 
+        # default eps was not provided
+        if self.noeps:
+            # use the method of closest fit to binomial to find an epsilon producing the best hierarchy
+            eps_min = 0.25
+            eps_max = 0.8
+            steps = 16
+            step = (eps_max - eps_min) / steps
+
+            # make a shifted binomial (to account for dillution and normal clusters)
+            goal =  np.array([comb(new_dim, i) for i in range(new_dim+1)] + [0]*(dim - new_dim))
+
+            all_errors = np.ndarray(steps, dtype = float)
+            eps_proposal = eps_min
+
+            for i in range(steps):
+                comparators = self.compute_comparators(clusters_tmp, dimensions, eps_proposal, dim)
+                hierarchy = self.compute_hierarchy(comparators, n_clusters, dim)
+
+                # compute the binomail fit of the hierarchy
+                counts = np.bincount(hierarchy, minlength=(dim+1))
+                # scale them to the perfect number of clusters
+                counts = counts * min(1, 2**new_dim / n_clusters) 
+                # compute the L1 norm for the difference
+                error = np.linalg.norm(goal-counts, ord=1)
+
+                all_errors[i] = error
+                eps_proposal += step
+
+            # select best epsilon
+            eps = eps_min + step * (np.argmin(all_errors))
+
+        print(f"Epsilon: {eps}")
+
+        # select the dimensions where the clsuter is most active
         comparators = self.compute_comparators(clusters_tmp, dimensions, eps, dim)
         hierarchy = self.compute_hierarchy(comparators, n_clusters, dim)
-        labels = self.select_max_dimensions(clusters_tmp, hierarchy, dimensions, dim, zero_dimensions=zero_dimensions)
+        labels = self.select_max_dimensions(clusters_tmp, hierarchy, dimensions, dim)
 
+        print(hierarchy)
+
+        # assign the labels to the clusters
         for i in range(n_clusters):
             clusters[i].labels = labels[i]
         
