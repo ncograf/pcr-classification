@@ -223,7 +223,7 @@ class TkinterSession():
         self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
         
         self.decision.predict_all()
-        df_data_points = pd.DataFrame(data=self.decision.X_transformed, columns=self.decision.prediction_axis) 
+        df_data_points = pd.DataFrame(data=self.decision.X, columns=self.decision.prediction_axis) 
         df_predictions = self.decision.probabilities_df
         selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=self.decision.prediction_axis)
 
