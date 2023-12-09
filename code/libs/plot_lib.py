@@ -326,7 +326,6 @@ def plot_pairwise_selection_bayesian_no_gt(
                             data_points : pd.DataFrame,
                             predictions : pd.DataFrame,
                             selected_pairs : List[Tuple[str, str]],
-                            axis_thresh : pd.DataFrame = None,
                             n_cols : int = 2,
                             mask : npt.ArrayLike = None,
                             save_path : str = None,
@@ -343,10 +342,6 @@ def plot_pairwise_selection_bayesian_no_gt(
         assert color_two in predictions.columns
         assert color_one in predictions.columns
 
-        if not axis_thresh  is None:
-            assert color_two in axis_thresh.columns
-            assert color_one in axis_thresh.columns
-
     if mask is None:
         mask = np.ones(data_points.shape[0], dtype=bool)
 
@@ -357,6 +352,9 @@ def plot_pairwise_selection_bayesian_no_gt(
     # check the number of plots to be created
     n = len(selected_pairs)
     n_rows = n // n_cols + (0 if n % n_cols == 0 else 1)
+    
+    if n == 0:
+        raise Exception("No plots were selected to be drawn.")
     
     fig, ax = plt.subplots(n_rows, n_cols, sharex=False, sharey=False)
     fig.set_figheight(3 * n_rows)
@@ -382,11 +380,14 @@ def plot_pairwise_selection_bayesian_no_gt(
         x_features = data_points.loc[mask, col_one].to_numpy()
         y_features = data_points.loc[mask, col_two].to_numpy()
 
-        ax[i // n_cols, i % n_cols].set_xlabel(col_one)
-        ax[i // n_cols, i % n_cols].set_ylabel(col_two)
-        ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
-        if not axis_thresh is None:
-            ax[i // n_cols, i % n_cols].axvline(x = axis_thresh.loc[0,col_one], c="#000000", linestyle='-')
+        if len(ax.shape) == 2:
+            ax[i // n_cols, i % n_cols].set_xlabel(col_one)
+            ax[i // n_cols, i % n_cols].set_ylabel(col_two)
+            ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
+        else:
+            ax[i].set_xlabel(col_one)
+            ax[i].set_ylabel(col_two)
+            ax[i].scatter(x_features, y_features, c = color_labels)
 
     fig.tight_layout()
     if save_path:

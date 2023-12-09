@@ -27,8 +27,8 @@ class ctkApp:
         self.session.init_settings(self.root)
         self.session.load_settings()
 
-        self.font = (tk.font.nametofont("TkDefaultFont"), 15)
-        self.titlefont = (tk.font.nametofont("TkDefaultFont"), 20)
+        self.font = (tk.font.nametofont("TkDefaultFont"), 13)
+        self.titlefont = (tk.font.nametofont("TkDefaultFont"), 18)
         bg_color = self.root.cget("fg_color")
 
         self.root.grid_columnconfigure(0,weight=1,uniform=1)
@@ -53,7 +53,7 @@ class ctkApp:
         ###############################
 
         self.plot_frame = ctk.CTkFrame(master=self.tab_plots)
-        self.plot_frame.grid(column=1,row=0, sticky="snwe",pady=(5,0), padx=(5,5))
+        self.plot_frame.grid(column=1,row=0, sticky="snwe",pady=(0,0), padx=(5,5))
         self.plot_frame.grid_columnconfigure(0,weight=1,uniform=1)
         self.plot_frame.grid_rowconfigure(0,weight=1,uniform=1)
 
@@ -63,18 +63,18 @@ class ctkApp:
         self.res_frame.grid_rowconfigure(1,weight=1)
         self.res_frame.grid_rowconfigure(0,weight=1)
 
-        self.control_frame = ctk.CTkFrame(master=self.tab_plots,
+        self.control_frame = ctk.CTkScrollableFrame(master=self.tab_plots,
                                   fg_color=bg_color,
                                   )
-        self.control_frame.grid(column=0,row=0,rowspan=2, sticky="news",pady=(5,5), padx=(5,5))
+        self.control_frame.grid(column=0,row=0,rowspan=2, sticky="news",pady=(0,5), padx=(5,5))
         self.control_frame.grid_columnconfigure(0,weight=25)
         self.control_frame.grid_columnconfigure(1,weight=15)
 
-        self.button_pad = 10
+        self.button_pad = 8
         self.pad_x = 20
-        self.pad_x_inter = 10
-        self.pad_y_inter = 3
-        button_height = self.font[1] + 15
+        self.pad_x_inter = 8
+        self.pad_y_inter = 2
+        button_height = self.font[1] + 12
         rowcnt = 0
 
         self.experiment_title = ctk.CTkLabel(self.control_frame, text="Experiment Setup",
@@ -126,8 +126,10 @@ class ctkApp:
         self.axis_name_frame = ScrollableInputFrame(master=self.control_frame,
                                                     corner_radius=0,
                                                     font=self.font,
+                                                    height=150,
                                                     )
-        self.axis_name_frame.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        self.axis_name_frame._scrollbar.configure(height=50)
+        self.axis_name_frame.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="ew")
         rowcnt = rowcnt+1
 
         label = ctk.CTkLabel(self.control_frame, text="Choose algorithm",
@@ -173,10 +175,29 @@ class ctkApp:
         self.plot_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,0), sticky="news")
         rowcnt = rowcnt+1
 
+        frame = ctk.CTkFrame(master=self.control_frame)
+        frame.grid(column=0,row=rowcnt, columnspan=2, sticky="snwe",pady=(self.button_pad,0), padx=(self.pad_x, self.pad_x))
+        frame.grid_columnconfigure(0,weight=1,uniform=1)
+        frame.grid_columnconfigure(1,weight=1,uniform=1)
+        button = ctk.CTkButton(master = frame,
+                               text="Add plot",
+                               height=button_height,
+                               font=self.font,
+                               command=self.add_plot)
+        button.grid(row=0,column=0,padx=(0,2.5),pady=(0,0), sticky="news")
+        button = ctk.CTkButton(master = frame,
+                               text="Remove plot",
+                               height=button_height,
+                               font=self.font,
+                               command=self.remove_plot)
+        button.grid(row=0,column=1,padx=(2.5,0),pady=(0,0), sticky="news")
+        rowcnt = rowcnt+1
         self.plot_selection = ScrollablePlotSelectFrame(master=self.control_frame,
                                                     corner_radius=0,
                                                     font=self.font,
+                                                    height=100,
                                                     )
+        self.plot_selection._scrollbar.configure(height=50)
         self.plot_selection.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="ew")
         rowcnt = rowcnt+1
 
@@ -236,12 +257,13 @@ class ctkApp:
         self.settings_frame.grid_columnconfigure(0,weight=1,uniform=1)
 
         rowcnt=0
-        tmp_title = ctk.CTkLabel(self.settings_frame, text="General computation",
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="Settings",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
         tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="ew")
         rowcnt = rowcnt+1
+
 
         tmp_textbox = ctk.CTkTextbox(self.settings_frame,
                              font=self.font,
@@ -250,9 +272,11 @@ class ctkApp:
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.tag_config("center", justify="center")
         tmp_textbox.insert(0.0,text=r"""
-                            All settings are stored in the folder $HOME/.pcr_conc, hence to copy settings from one machine to another, just copy that folder to the desired machine.
+                            All settings are stored in the folder $HOME/.pcr_conc, hence to copy 
+                            settings from one machine to another, just copy that folder to the desired machine.
 
-                            To restore default settings, just delete the folder $HOME/.pcr_conc. But note that this also resets the axis names to the default names. 
+                            To restore default settings, just delete the folder $HOME/.pcr_conc. 
+                            But note that this also resets the axis names to the default names. 
                             If you want to reset only the settings, delete the file $HOME/.pcr_conc/settings.csv.
                             """
                            )
@@ -430,6 +454,12 @@ class ctkApp:
         self.root.protocol("WM_DELETE_WINDOW", self.destroy_root)
 
         self.root.mainloop()
+    
+    def add_plot(self):
+        self.plot_selection.add_item()
+    
+    def remove_plot(self):
+        self.plot_selection.remove_last()
    
     def algo_switch_event(self):
         

@@ -42,8 +42,6 @@ def compute_results(df_probabilites : pd.DataFrame, threshold : float, df_data :
         outlier = np_probs < 0
         np_probs = np_probs[~outlier]
         num_tot, mid_pos, min_pos, max_pos = compute_pos_min_max(np_probabilities=np_probs, threshold=threshold)
-        ic(min_pos,max_pos)
-        
 
         concentration_max_stock = compute_concetration(num_tot, max_pos)
         concentration_min_stock = compute_concetration(num_tot, min_pos)

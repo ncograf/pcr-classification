@@ -23,14 +23,13 @@ class ScrollableInputFrame(ctk.CTkScrollableFrame):
                              justify='center',
                              font=self.font,
                              anchor="center")
-        label.grid(row=len(self.input_list), column=0, padx=(20,0), pady=(5, 5), sticky="w")
+        label.grid(row=len(self.input_list), column=0, padx=(5,0), pady=(1, 1), sticky="ew")
         input =  ctk.CTkEntry(master=self,
                              font=self.font,
                              textvariable=textvar,
                                 justify='center',
                             )
-        
-        input.grid(row=len(self.input_list), column=1, pady=(5, 5), sticky="w")
+        input.grid(row=len(self.input_list), column=1, pady=(0, 1), sticky="we")
         self.input_list.append(input)
         self.label_list.append(label)
 
@@ -76,14 +75,14 @@ class ScrollablePlotSelectFrame(ctk.CTkScrollableFrame):
                              values=self.labels,
                              variable=text_left,
         )
-        left.grid(row=len(self.left_list), column=0, padx=(20,0), pady=(5, 5), sticky="w")
+        left.grid(row=len(self.left_list), column=0, padx=(5,0), pady=(1, 1), sticky="ew")
 
         right = ctk.CTkComboBox(self,
                              font=self.font,
                              values=self.labels,
                              variable=text_right,
         )
-        right.grid(row=len(self.right_list), column=1, padx=(20,0), pady=(5, 5), sticky="w")
+        right.grid(row=len(self.right_list), column=1, padx=(5,0), pady=(0, 1), sticky="ew")
 
         self.right_list.append(right)
         self.left_list.append(left)
@@ -97,3 +96,9 @@ class ScrollablePlotSelectFrame(ctk.CTkScrollableFrame):
         
         self.right_list = []
         self.left_list = []
+    
+    def remove_last(self):
+        last_left = self.left_list.pop()
+        last_right = self.right_list.pop()
+        last_left.destroy()
+        last_right.destroy()
