@@ -32,8 +32,7 @@ class TkinterSession():
 
         self.numplots = 6
         self.decision = None
-        self.min_threshold = 0.1
-        self.max_threshold = 0.9
+        self.threshold = 0.5
         self.settings_dir = Path(Path.home(),".pcr_conc")
         self.settings_path = Path(self.settings_dir,"settings.csv")
         self.axis_map_path = Path(self.settings_dir,"axis_map.csv")
@@ -220,6 +219,9 @@ class TkinterSession():
             self.settings_vars["num_plot_points"].set(10000)
         
         self.decision.eps = self.settings_vars["eps"].get()
+        if self.settings_vars["algorithm"].get() == "Hierarchy":
+            self.decision.eps = 0.5
+
         self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
         
         self.decision.predict_all()
@@ -232,7 +234,7 @@ class TkinterSession():
         mask = np.random.choice([0,1], n, replace=True, p=[1-p,p] ).astype(bool)
         fig = plot_lib.plot_pairwise_selection_bayesian_no_gt(df_data_points,df_predictions,selected_pairs,n_cols=2,mask=mask)
         
-        short_res = stats_lib.compute_short_results(self.decision.probabilities_df, self.min_threshold, self.max_threshold, df_data_points)
+        short_res = stats_lib.compute_short_results(self.decision.probabilities_df, self.threshold, df_data_points)
         
         return fig, short_res
         
@@ -244,25 +246,43 @@ class TkinterSession():
         
         if self.decision.probabilities_df is None:
             _ = self.compute(axis_frame=axis_frame,select_frame=select_frame)
+        
+        # compute path
+        output_dir = Path(self.settings_vars["output_path"].get())
+        output_dir.mkdir(parents=True, exist_ok=True) # create directory if it does not yet exist
+        result_path = Path(output_dir, "results.csv")
 
         df_list = []
+        df_data_points = pd.DataFrame(data=self.decision.X, columns=self.decision.prediction_axis) 
+        df_predictions = pd.DataFrame(data=self.decision.predictions_df, columns=self.decision.prediction_axis) 
+        df_probabilities = pd.DataFrame(data=self.decision.probabilities_df, columns=self.decision.prediction_axis) 
         for file in self.files:
             file_path = Path(file)
             test_name = file_path.stem
             mask = self.file_masks[file]
-            df_data_points = pd.DataFrame(data=self.decision.X_transformed, columns=self.decision.prediction_axis) 
             df_temp = stats_lib.compute_results(self.decision.probabilities_df.iloc[mask,:],
-                                                     self.min_threshold,
-                                                     self.max_threshold,
+                                                     self.threshold,
                                                      df_data_points.iloc[mask,:])
             df_temp.loc[:,"Chamber"] = [test_name]
             df_list.append(df_temp)
+            
+            # ouput results
+            file_path = Path(output_dir, f"{file_path.stem}_labelled.csv")
+            df_output = pd.concat([ df_data_points.iloc[mask,:], df_predictions.iloc[mask,:]],axis=1)
+            df_output.to_csv(file_path)
+            
+        # compute plots
+        selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=self.decision.prediction_axis)
+        for (col_one, col_two) in selected_pairs:
+            plot_path = Path(output_dir, f"{col_one}_{col_two}.png")
+            plot_lib.plot_pair_bayesian_no_gt(df_data_points, df_probabilities, col_one, col_two, save_path=plot_path)
+
+            
 
         df_results = pd.concat(df_list)
         chamber = df_results.pop('Chamber')
         df_results.insert(0, 'Chamber', chamber)
-        output_path = Path(self.settings_vars["output_path"].get(), "results.csv")
-        df_results.to_csv(output_path, index=False)
+        df_results.to_csv(result_path, index=False)
         
     
     def load_settings(self, change_config : bool = True):
@@ -301,15 +321,19 @@ class TkinterSession():
         return settings_dict
             
             
-    def store_settings(self, settings=True, axis=True):
+    def store_settings(self, settings=True, axis=True, key = None):
         
         # first get settings
         stored_axis_map, stored_settings = self.load_settings(change_config=False)
         
-        
         # comine with local settings not to loose anything
-        axis_map = stored_axis_map | self.axis_map
-        settings = stored_settings | self.settings_dict()
+        if key is None:
+            axis_map = stored_axis_map | self.axis_map
+            settings = stored_settings | self.settings_dict()
+        else:
+            axis_map = stored_axis_map 
+            settings = stored_settings
+            settings[key] = self.settings_dict()[key]
         
         # convert values to strings or numbers instead of tkinter variables
         df_settings = pd.DataFrame(settings, index=[0])

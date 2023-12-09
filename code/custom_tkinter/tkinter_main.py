@@ -250,6 +250,28 @@ class ctkApp:
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.tag_config("center", justify="center")
         tmp_textbox.insert(0.0,text=r"""
+                            All settings are stored in the folder $HOME/.pcr_conc, hence to copy settings from one machine to another, just copy that folder to the desired machine.
+
+                            To restore default settings, just delete the folder $HOME/.pcr_conc. But note that this also resets the axis names to the default names. 
+                            If you want to reset only the settings, delete the file $HOME/.pcr_conc/settings.csv.
+                            """
+                           )
+        rowcnt = rowcnt+1
+
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="General computation",
+                             justify='center',
+                             font=self.titlefont,
+                             anchor="center")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="ew")
+        rowcnt = rowcnt+1
+
+        tmp_textbox = ctk.CTkTextbox(self.settings_frame,
+                             font=self.font,
+                             wrap='word',
+                             )
+        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.tag_config("center", justify="center")
+        tmp_textbox.insert(0.0,text=r"""
                             Generally we work under the following assumptions:
                             1. Let D be the set of dimensions. If for a sample there exists points
                             which are positive in $S \subseteq D$. Then we assume that for every
@@ -496,7 +518,8 @@ class ctkApp:
             fig, df_results = self.session.compute(self.axis_name_frame, self.plot_selection)
             self.cluster_buttton.configure(require_redraw=True, fg_color="green")
             self.plot_point_slider._to = self.session.decision.X_transformed.shape[0]
-            self.session.store_settings(axis=True, settings=False)
+            self.session.store_settings(axis=True, settings=False, key="eps")
+            self.session.store_settings(axis=True, settings=False, key="algorithm")
             self.draw_results(df_results)
             self.draw_figure(fig)
         #except Exception as e:
@@ -505,17 +528,18 @@ class ctkApp:
     def export(self):
         #try:
             self.session.export(self.axis_name_frame, self.plot_selection)
-            self.session.store_settings(axis=True, settings=False)
+            self.session.store_settings(axis=True, settings=False, key="eps")
+            self.session.store_settings(axis=True, settings=False, key="algorithm")
             msg(title="Export", message="Successful export.", icon="check")
         #except Exception as e:
         #    msg(title="Error", message=str(e), icon="cancel")
         
     def save_default(self):
-        #try:
+        try:
             self.session.store_settings(axis=False)
             msg(title="Export", message="Successfully saved settings as default.", icon="check")
-        #except Exception as e:
-        #    msg(title="Error", message=str(e), icon="cancel")
+        except Exception as e:
+            msg(title="Error", message=str(e), icon="cancel")
         
     def draw_results(self, df_results : pd.DataFrame):
         shape = df_results.shape
