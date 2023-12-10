@@ -252,7 +252,7 @@ class ctkApp:
         #############################
         # Settings
         #############################
-        self.settings_frame = ctk.CTkFrame(master=self.tab_settings, width=400)
+        self.settings_frame = ctk.CTkScrollableFrame(master=self.tab_settings, width=400)
         self.settings_frame.grid(column=0,row=0, sticky="snwe",pady=(5,0), padx=(5,5))
         self.settings_frame.grid_columnconfigure(0,weight=1,uniform=1)
 
@@ -268,8 +268,9 @@ class ctkApp:
         tmp_textbox = ctk.CTkTextbox(self.settings_frame,
                              font=self.font,
                              wrap='word',
+                             height=150,
                              )
-        tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        tmp_textbox.grid(row=rowcnt, column=0, columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.tag_config("center", justify="center")
         tmp_textbox.insert(0.0,text=r"""
                             All settings are stored in the folder $HOME/.pcr_conc, hence to copy 
