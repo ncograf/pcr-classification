@@ -3,17 +3,18 @@ import numpy.typing as npt
 import pandas as pd
 from typing import Tuple
 from sklearn import metrics
+from icecream import ic
 
 
-def compute_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_treshhold : float, df_data : pd.DataFrame) -> pd.DataFrame:
+def compute_results(df_probabilites : pd.DataFrame, threshold : float, df_data : pd.DataFrame) -> pd.DataFrame:
     """Compute statistics on given results. For each column in df_prbabilities the following statistics are computed
 
     - Concentration: -4440 * log_10(1 - (#positve droplets) / (#total droplets))
     - Number of negative Droplets
     - Number of positive Droplets
     - Separability score  Davies-Bouldin Index [1]
-    - Concentration Stock Min, same as Concentration, just with a higher threshhold for points to be considered positive
-    - Concentration Stock Max, same as Concentration, just with a lower threshhold for points to be considered positive
+    - Concentration Stock Min, same as Concentration, but we also take uncertainties of points with probabilities > threshold into account
+    - Concentration Stock Max, same as Concentration, but we also take uncertainties of points with probabilities < threshold into account
     - Concentration relative uncertainty: (ConcentrationMaxStock - ConcentrationMinStock) / Concentration / 2
     
     [1]: D. L. Davies and D. W. Bouldin, "A Cluster Separation Measure,"
@@ -22,8 +23,7 @@ def compute_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_
 
     Args:
         df_probabilites (pd.DataFrame): Dataframe with columns corresponding to diseases
-        min_threshhold (float): Threshhold for Concentration Stock Max
-        max_treshhold (float): Threshhold for Concentration Stock Min
+        threshold (float): Threshold for positive and negative labels
         df_data (pd.DataFrame): Data used for separability score (without labels)
 
     Returns:
@@ -37,25 +37,25 @@ def compute_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_
     for disease in df_data.columns:
 
         np_probs = np.array(df_probabilites.loc[:,disease])
-        threshhold = (max_treshhold + min_threshhold) / 2
-        num_tot, min_pos, _ = compute_pos_neg(np_probabilities=np_probs, theshhold=min_threshhold)
-        _, mid_pos, mid_neg = compute_pos_neg(np_probabilities=np_probs, theshhold=threshhold)
-        _, max_pos, _ = compute_pos_neg(np_probabilities=np_probs, theshhold=max_treshhold)
         
+        # ignore outliers
+        outlier = np_probs < 0
+        np_probs = np_probs[~outlier]
+        num_tot, mid_pos, min_pos, max_pos = compute_pos_min_max(np_probabilities=np_probs, threshold=threshold)
 
-        concentration_max_stock = compute_concetration(num_tot, min_pos)
-        concentration_min_stock = compute_concetration(num_tot, max_pos)
+        concentration_max_stock = compute_concetration(num_tot, max_pos)
+        concentration_min_stock = compute_concetration(num_tot, min_pos)
         concentration = compute_concetration(num_tot, mid_pos)
         
         relative_uncertainty = compute_relative_uncertainty(concentration_min_stock, concentration_max_stock)
         
-        np_data = np.array(df_data)
-        labels = np_probs > threshhold
+        np_data = np.array(df_data)[~outlier]
+        labels = np_probs > threshold
         ch_score, bd_score = compute_separability_score(np_data, labels)
 
         df_results[compute_name(disease, 'Concentration')] = [concentration]
         df_results[compute_name(disease, 'NumberOfPositiveDroplets')] = [mid_pos]
-        df_results[compute_name(disease, 'NumberOfNegativeDroplets')] = [mid_neg]
+        df_results[compute_name(disease, 'NumberOfNegativeDroplets')] = [num_tot - mid_pos]
         df_results[compute_name(disease, 'SeparabilityScore')] = [bd_score]
         df_results[compute_name(disease, 'ConcentrationStock_Min')] = [concentration_min_stock]
         df_results[compute_name(disease, 'ConcentrationStock_Max')] = [concentration_max_stock]
@@ -65,7 +65,7 @@ def compute_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_
 
     return df_results
 
-def compute_short_results(df_probabilites : pd.DataFrame, min_threshhold : float ,max_treshhold : float, df_data : pd.DataFrame) -> pd.DataFrame:
+def compute_short_results(df_probabilites : pd.DataFrame, threshold : float, df_data : pd.DataFrame) -> pd.DataFrame:
     """Compute statistics on given results. For each column in df_prbabilities the following statistics are computed
 
     - Concentration: -4440 * log_10(1 - (#positve droplets) / (#total droplets))
@@ -78,14 +78,13 @@ def compute_short_results(df_probabilites : pd.DataFrame, min_threshhold : float
 
     Args:
         df_probabilites (pd.DataFrame): Dataframe with columns corresponding to diseases
-        min_threshhold (float): Threshhold for Concentration Stock Max
-        max_treshhold (float): Threshhold for Concentration Stock Min
+        threshold (float): Threshold for positive and negative labels
         df_data (pd.DataFrame): Data used for separability score (without labels)
 
     Returns:
         pd.DataFrame : Dataframe with the above mentioned statistics
     """
-    all_results = compute_results(df_probabilites, min_threshhold, max_treshhold, df_data)
+    all_results = compute_results(df_probabilites, threshold, df_data)
     concentration = []
     bd_score = []
     rel_uncetainty = [] 
@@ -108,8 +107,8 @@ def compute_name(prefix : str, name :str) -> str:
     return f'{prefix}_{name}'
         
 
-def compute_pos_neg(np_probabilities : npt.NDArray, theshhold : float) -> Tuple[int, int, int] :
-    """Compute the number of points for ONE class
+def compute_pos_min_max(np_probabilities : npt.NDArray, threshold : float) -> Tuple[int, int, int] :
+    """Compute the number of points for ONE class (also compute min and max stock)
 
     Args
         np_probabilities (npt.NDArray): prbabilities for each points to belong to the class
@@ -120,10 +119,18 @@ def compute_pos_neg(np_probabilities : npt.NDArray, theshhold : float) -> Tuple[
     """
     assert len(np_probabilities.shape) == 1
 
+    mask = np_probabilities >= threshold
+
     num_tot = int(np_probabilities.shape[0])
-    num_pos = int(np.sum(np_probabilities >= theshhold))
-    num_neg = num_tot - num_pos
-    return num_tot, num_pos, num_neg
+    num_pos = int(np.sum(mask))
+
+    # also add the uncertainty in the netatives which might be positive
+    num_max_pos = int(np.sum(mask) + np.sum(np_probabilities[~mask]))
+
+    # also consider only uncertainty of positives
+    num_min_pos = int(np.sum(np_probabilities[mask]))
+
+    return num_tot, num_pos, num_min_pos, num_max_pos
     
 def compute_concetration(num_tot : int, num_pos : int, scale : float = 4440.) -> float:
     """Concentration: -4440 * log_10(1 - (#positve droplets) / (#total droplets))

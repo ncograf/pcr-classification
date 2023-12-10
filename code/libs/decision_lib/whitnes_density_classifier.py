@@ -122,7 +122,7 @@ class WhitnesDensityClassifier(BaseEstimator):
     
     def predict_all(self):
         # make cluster predictions
-        self.cluster_dict = self.predict_cluster_labels(self.X_transformed,
+        self.cluster_dict = self.predict_cluster_labels(self.X,
                                                         clusters=self.cluster_dict,
                                                         eps=self.eps,
                                                         zero_dimensions=self.neg_dimensions)
@@ -280,14 +280,15 @@ class WhitnesDensityClassifier(BaseEstimator):
             """
             
             dist = c1.mean_t - c2.mean_t
-            smoothing = 0.6
             
             # for each in row l we have the distances scaled by distance l
-            scaled_avg_dist = np.einsum('k,l -> lk', dist , 1 / (dist + 1e-15))
+            scaled_avg_dist = np.einsum('k,l -> lk', dist , np.ones_like(dist))
 
+            smoothing = 6
             interval = 0.2
-            center = 1.3
-            scaled_avg_dist_ = ((np.abs(scaled_avg_dist) - center) * smoothing) / interval * 10
+            center = 1.1
+            # the - 0.05 helps in case of strong corrlation
+            scaled_avg_dist_ = ((np.abs(scaled_avg_dist + 0.4) - center) * smoothing) / interval
             
             in_range = 1 / (1 + np.exp(scaled_avg_dist_))
             np.fill_diagonal(in_range, 1)
@@ -302,7 +303,7 @@ class WhitnesDensityClassifier(BaseEstimator):
             dist = c1.mean_t - c2.mean_t
             dist_scaled = dist / (max_dists + 1e-15)
             
-            interval = 1
+            interval = 0.5
             dist_scaled_ = ((dist_scaled - eps) / interval * 8)
 
             gt = 1 / (1 + np.exp(-dist_scaled_))
