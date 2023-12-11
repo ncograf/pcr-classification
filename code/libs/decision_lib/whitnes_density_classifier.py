@@ -164,7 +164,7 @@ class WhitnesDensityClassifier(BaseEstimator):
         outliers_mask = outliers_labels < 0
 
         # compute zero dimensions
-        self.neg_dimensions = np.percentile(self.X[outliers_mask],99,axis=0) <= 10000
+        self.neg_dimensions = np.percentile(self.X[~outliers_mask],99.9999,axis=0) <= 10000
         
         # remove outliers and create clusters
         self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
