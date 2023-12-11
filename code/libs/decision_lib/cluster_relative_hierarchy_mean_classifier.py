@@ -27,7 +27,8 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
                  eps : float = 0.5,
                  contamination : float = 0.001,
                  negative_range: float = 0.9,
-                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS']
+                 prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
+                 cutoff = 10000
                  ):
         """Initialize classifier with important parameters
 
@@ -66,6 +67,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         self.X = None
         self.predictions_df = None
         self.point_hierarchy = None
+        self.cutoff = self.cutoff
 
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
@@ -138,7 +140,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         outliers_mask = outliers_labels < 0
 
         # compute zero dimensions
-        self.neg_dimensions = np.percentile(self.X[~outliers_mask],99.99999,axis=0) <= 10000
+        self.neg_dimensions = np.percentile(self.X[~outliers_mask],99.99999,axis=0) <= self.cutoff
         
         # remove outliers and create clusters
         self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
@@ -244,18 +246,19 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
                 # mark the num_active[i] highest dimensions as active
                 for j in temp:
-                    active[i][j] = True
+                    if clusters[i].mean[j] > 0.7 * self.cutoff:
+                        active[i][j] = True
 
         return active
 
-    def compute_hierarchy(self, comparators : np.ndarray,  n_clusters : int, dim : int) -> Dict[int, transform_lib.Cluster]:
+    def compute_hierarchy(self, comparators : np.ndarray,  n_clusters : int, dim : int, new_dim : int) -> Dict[int, transform_lib.Cluster]:
     
         # consider all pairs of clusters
         pairs = list(itertools.combinations(range(n_clusters), 2))
         hierarchy = np.zeros(n_clusters, int)
     
         # we define rank to refer to the number of active features
-        for rank in range(dim):
+        for rank in range(new_dim):
             for (base, other) in pairs:
                 # we only consider clusters of given rank
                 if hierarchy[base] < rank or hierarchy[other] < rank:
@@ -369,7 +372,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         # default eps was not provided
         if eps == None:
             # use the method of closest fit to binomial to find an epsilon producing the best hierarchy
-            eps_min = 0.25
+            eps_min = 0.3
             eps_max = 0.8
             steps = 16
             step = (eps_max - eps_min) / steps
@@ -382,7 +385,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
             for i in range(steps):
                 comparators = self.compute_comparators(clusters_tmp, dimensions, eps_proposal, dim)
-                hierarchy = self.compute_hierarchy(comparators, n_clusters, dim)
+                hierarchy = self.compute_hierarchy(comparators, n_clusters, dim, new_dim)
 
                 # compute the binomail fit of the hierarchy
                 counts = np.bincount(hierarchy, minlength=(dim+1))
