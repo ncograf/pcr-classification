@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 import itertools
 from icecream import ic
 from typing import Tuple, List
+import matplotlib.cm as cm
+
+def get_coloring(n_labels : int):
+    colors = cm.rainbow(np.linspace(0, 1, n_labels + 1))
+    colors[-1, :] = np.array([0.0, 0.0, 0.0, 1.0])
+    return colors
 
 def pairwise_plots_pred_true(df : pd.DataFrame,
                                 predicted_label : npt.ArrayLike,
@@ -88,8 +94,11 @@ def pairwise_plots_label(df : pd.DataFrame, label : np.array = None):
     df_features = df.iloc[:, :6]
     feature_names = df_features.columns
 
-    # poltting
+    # plotting
     combinations = itertools.combinations(feature_names, 2)
+
+    # setting the colors
+    colors = get_coloring(max(label) + 1)
     
     fig, ax = plt.subplots(5, 3, sharex=False, sharey=False)
     fig.set_figheight(15)
@@ -103,7 +112,7 @@ def pairwise_plots_label(df : pd.DataFrame, label : np.array = None):
         ax[i //3, i %3].set_xlabel(combination[0])
         ax[i //3, i %3].set_ylabel(combination[1])
         if not label is None:
-            ax[i //3, i %3].scatter(np_compo_features[:,0], np_compo_features[:,1], c = label)
+            ax[i //3, i %3].scatter(np_compo_features[:,0], np_compo_features[:,1], c = colors[label])
         else:
             ax[i //3, i %3].scatter(np_compo_features[:,0], np_compo_features[:,1])
     fig.tight_layout()
