@@ -67,7 +67,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
         self.X = None
         self.predictions_df = None
         self.point_hierarchy = None
-        self.cutoff = self.cutoff
+        self.cutoff = cutoff
 
     def predict(self, X : npt.ArrayLike,
                 y : npt.ArrayLike = None, 
@@ -404,7 +404,7 @@ class ClusterRelativeHierarchyMeanClassifier(BaseEstimator):
 
         # select the dimensions where the clsuter is most active
         comparators = self.compute_comparators(clusters_tmp, dimensions, eps, dim)
-        hierarchy = self.compute_hierarchy(comparators, n_clusters, dim)
+        hierarchy = self.compute_hierarchy(comparators, n_clusters, dim, new_dim)
         labels = self.select_max_dimensions(clusters_tmp, hierarchy, dimensions, dim)
 
         # store point hierarchy for debug
