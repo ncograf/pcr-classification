@@ -187,6 +187,7 @@ class ClusterRelativeHierarchyMeanDensityClassifier(BaseEstimator):
                                                max_samples=data.shape[0],
                                                n_estimators=10)
             labels = outlier_detector.fit_predict(data) # outliers will get label -1
+            print(len(labels[labels == -1]), " outliers detected")
             labels[labels >= 0] = cluster_engine.fit_predict(data[labels >= 0])
         else:
             labels = cluster_engine.fit_predict(data)
