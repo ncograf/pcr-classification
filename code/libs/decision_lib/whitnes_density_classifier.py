@@ -6,7 +6,7 @@ import transform_lib
 from sklearn.base import BaseEstimator, ClusterMixin, TransformerMixin
 from sklearn.ensemble import IsolationForest
 from typing import Dict, List, Tuple, Callable, ParamSpec, TypeVar
-from negative_dimnesion_detection import get_negative_dimensions
+from negative_dimnesion_detection import get_negative_dimension_3
 from icecream import ic
 import time
 
@@ -48,6 +48,8 @@ class WhitnesDensityClassifier(BaseEstimator):
                  eps : float = 1.7,
                  outlier_quantile: float = 0.001,
                  negative_range: float = 0.9,
+                 max_positive: int = 3,
+                 negative_theshold: float = 10000,
                  prediction_axis : List[str] = ['SARS-N2_POS','SARS-N1_POS','IBV-M_POS','RSV-N_POS','IAV-M_POS','MHV_POS'],
                  verbose = False):
         """Initialize classifier with important parameters
@@ -86,6 +88,8 @@ class WhitnesDensityClassifier(BaseEstimator):
         self.outlier_quantile = outlier_quantile
         self.neg_dimensions = None
         self.verbose = verbose
+        self.neg_threshold = negative_theshold
+        self.max_positives = max_positive
         self.thresh = 0.5
         self.probabilities_df = None
         self.X = None
@@ -164,7 +168,7 @@ class WhitnesDensityClassifier(BaseEstimator):
         outliers_mask = outliers_labels < 0
 
         # compute zero dimensions
-        self.neg_dimensions = np.percentile(self.X[~outliers_mask],99.9999,axis=0) <= 10000
+        self.neg_dimensions = get_negative_dimension_3(np_data=data, max_positives=self.max_positives, threshold=self.neg_threshold )
         
         # remove outliers and create clusters
         self.cluster_labels = self.get_clusters(self.X, self.cluster_algorithm, outliers_mask=outliers_mask, no_neg_mask=self.No_neg_mask) 
@@ -287,7 +291,6 @@ class WhitnesDensityClassifier(BaseEstimator):
             smoothing = 6
             interval = 0.2
             center = 1.1
-            # the - 0.05 helps in case of strong corrlation
             scaled_avg_dist_ = ((np.abs(scaled_avg_dist + 0.4) - center) * smoothing) / interval
             
             in_range = 1 / (1 + np.exp(scaled_avg_dist_))

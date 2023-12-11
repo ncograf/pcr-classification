@@ -87,14 +87,20 @@ def compute_short_results(df_probabilites : pd.DataFrame, threshold : float, df_
     all_results = compute_results(df_probabilites, threshold, df_data)
     concentration = []
     bd_score = []
+    positives = []
+    negatives = []
     rel_uncetainty = [] 
     for col in df_probabilites.columns:
+        positives.append(all_results.loc[0, compute_name(col, 'NumberOfPositiveDroplets')])
+        negatives.append(all_results.loc[0, compute_name(col, 'NumberOfNegativeDroplets')])
         concentration.append(all_results.loc[0, compute_name(col, 'Concentration')])
         bd_score.append(all_results.loc[0, compute_name(col, 'SeparabilityScore')])
         rel_uncetainty.append(all_results.loc[0, compute_name(col, 'ConcentrationStock_RelativeUncertainty')])
 
     df_all = {}
     df_all["Disease"] = df_probabilites.columns
+    df_all["#Positives"] = positives
+    df_all["#Negatives"] = negatives
     df_all["Concentration"] = concentration
     df_all["Separability"] = bd_score
     df_all["Uncertainty"] = rel_uncetainty

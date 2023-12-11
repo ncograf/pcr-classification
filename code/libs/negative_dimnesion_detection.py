@@ -79,3 +79,29 @@ def get_negative_dimensions(np_points : npt.NDArray,
     certainty = 1 / (1 + np.exp(-(statistic - center) / scale))
     
     return certainty, statistic
+
+
+def get_negative_dimension_3(np_data : npt.ArrayLike, max_positives : int = 3, threshold : float = 10000):
+    """Compute negative dimensions on datthesholda
+    
+    The criterion here is to take out the larghest 'max_positives' points,
+    and then it compares the largest points left to the threshold.
+
+    Args:
+        np_data (npt.ArrayLike): Datapoints
+        max_positives (int, optional): Number of points to be removed. Defaults to 3.
+        theshold (int, optional): Threshold for to decide on negativity. Defaults to 10000.
+
+    Returns:
+        npt.NDArray: indicators for dimension in which a point is active
+    """
+    
+    order = np.flip(np.argsort(np_data, axis=0), axis=0)
+    max_indices = order[max_positives,:]
+    max_cosidered = np.diagonal(np_data[max_indices])
+    return max_cosidered <= threshold
+    
+
+
+    
+    

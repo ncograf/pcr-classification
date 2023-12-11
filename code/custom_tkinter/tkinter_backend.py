@@ -1,7 +1,8 @@
 import data_lib
+import re
 from typing import List
 from tkinter_classes import ScrollableInputFrame, ScrollablePlotSelectFrame
-from negative_dimnesion_detection import get_negative_dimensions
+from negative_dimnesion_detection import get_negative_dimensions, get_negative_dimension_3
 from icecream import ic
 import tkinter as tk    
 import customtkinter as ctk
@@ -29,6 +30,8 @@ class TkinterSession():
         self.neg_data : pd.DataFrame = None
         self.neg_masks = None
         self.settings_vars : Dict[str, tk.Variable] = {}
+        
+        self.chamber_file = None
 
         self.numplots = 6
         self.decision = None
@@ -42,10 +45,11 @@ class TkinterSession():
             "output_path": str(Path(Path.home(), "pcr_results").absolute()),
             "eps" : 0.3,
             "outliers" : 0.001, 
-            "nc_outliers" : 0.01,
-            "neg_ignore" : 0.9,
             "num_plot_points" : 10000,
             "algorithm" : "Hierarchy",
+            "negatives_max_positives" : 3,
+            "neg_threshold" : 10000,
+            "input_path": str(Path(Path.home()).absolute()),
             }
 
         axis_map_default = {
@@ -63,20 +67,50 @@ class TkinterSession():
             tk.DoubleVar(master, None, "eps"),
             tk.IntVar(master, None, "num_plot_points"),
             tk.DoubleVar(master, None, "outliers"),
-            tk.DoubleVar(master, None, "nc_outliers"),
-            tk.DoubleVar(master, None, "neg_ignore"),
             tk.StringVar(master, None, "output_path"),
             tk.StringVar(master, None, "algorithm"),
+            tk.IntVar(master, None, "negatives_max_positives"),
+            tk.DoubleVar(master, None, "neg_threshold"),
+            tk.StringVar(master, None, "input_path"),
         ]
         for m in settings_list:
             self.settings_vars[str(m)] = m
-    
+
+    def get_chamber_file(self, file) -> None:
+
+        if self.file_data is None:
+            raise Exception("Experiment files must be selected before chamber files.")
+
+        try:
+            chamber_file = pd.read_csv(file)
+        except:
+            raise FileNotFoundError("Error: No file provided.")
+        
+        chamber_file.rename(columns=lambda x : x.strip(), inplace=True)
+
+        columns = list(chamber_file.columns)
+        
+        if not "ChamberName" in columns:
+            raise Exception("Chamber file does not contain column 'ChamberName'.")
+
+        if not "ChamberID" in columns:
+            raise Exception("Chamber file does not contain column 'ChamberID'.")
+        
+        if not "SampleName" in columns:
+            raise Exception("Chamber file does not contain column 'SampleName'.")
+        
+        _ = self.check_chambers(chamber_file=chamber_file)
+        self.chamber_file = chamber_file
+        
     def get_files(self, file_list : List[str], axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame) -> None:
         
         file_data, file_masks = data_lib.load_raw_dataset(file_list)
 
         if not file_data.dtypes.map(pd.api.types.is_numeric_dtype).all():
             raise Exception("Chosen file(s) do have columns with non numeric entries. You have possibly chosen a wrong file.")
+        
+        self.settings_vars["input_path"].set(Path(file_list[0]).parent.absolute())
+        self.store_settings()
 
         axis_frame.remove_all()
         for col in file_data.columns:
@@ -98,7 +132,7 @@ class TkinterSession():
         
         # this check possibly raises exception so always call it last
         if not self.neg_data is None:
-            self.ckeck_negs()
+            self.check_negs()
 
     def get_negs(self, file_list : List[str]) -> None:
         if self.file_data is None:
@@ -108,10 +142,10 @@ class TkinterSession():
         # this will raise a key error when the columns do not match
         neg_data = neg_data.loc[:, self.file_data.columns]
         
-        acceptable_contamination = self.settings_vars["nc_outliers"].get()
+        max_positives = self.settings_vars["negatives_max_positives"].get()
+        neg_threshold = self.settings_vars["neg_threshold"].get()
         
-        neg_dims, _ = get_negative_dimensions(neg_data, outliers_percentile=acceptable_contamination)
-        neg_dims = neg_dims <= 0.01 
+        neg_dims = get_negative_dimension_3(np.array(neg_data), max_positives=max_positives, threshold=neg_threshold)
 
         if np.any(~neg_dims):
             raise NotNegError(f"File list {file_list} contains cluster which are contaminated!")
@@ -121,7 +155,7 @@ class TkinterSession():
         
         self.decision = None
     
-    def ckeck_negs(self):
+    def check_negs(self):
         # this will raise a key error when the columns do not match
         try:
             neg_data = neg_data.loc[:, self.file_data.columns]
@@ -131,6 +165,22 @@ class TkinterSession():
             self.neg_masks = None
             self.neg_files = None
             raise Exception("New data did not match negative data!")
+
+    def check_chambers(self, chamber_file : pd.DataFrame):
+        # will raise an error if the chamber dont match
+        if chamber_file is None:
+            return None
+        file_info = {}
+        for file in self.files:
+            file_repl = file.replace("-","_")
+            for i,ch_id in enumerate(chamber_file.loc[:,"ChamberID"].to_list()):
+                a = ch_id.strip().replace("-","_")
+                x = re.search(a,file_repl)
+                if not x is None:
+                    file_info[file] = i
+            if not file in file_info.keys():
+                raise Exception("Chamber does not contain chamber data of all selected files.")
+        return file_info
             
     def drop_negs(self):
         self.neg_data = None
@@ -187,30 +237,33 @@ class TkinterSession():
             np_neg = self.neg_data.to_numpy()
 
         whitening_engine = transform_lib.WhitenTransformer(whiten=transform_lib.Whitenings.NONE)
-        num_cluster = int(2**np_data.shape[1] * 2)
+        num_cluster = int(2**np_data.shape[1] * 1.2)
         num_cluster = min(np_data.shape[0], num_cluster)
         cluster_engine = cluster.KMeans(n_clusters=num_cluster, n_init='auto')
         
         outlier_quantile = self.settings_vars["outliers"].get()
-        negative_range = self.settings_vars["neg_ignore"].get()
+        max_positives = self.settings_vars["negatives_max_positives"].get()
+        threshold = self.settings_vars["neg_threshold"].get()
 
         if self.settings_vars["algorithm"].get() == "Hierarchy":
             self.decision = decision_lib.ClusterRelativeHierarchyMeanClassifier(
                                                 cluster_algorithm=cluster_engine,
                                                 whitening_transformer=whitening_engine,
                                                 contamination=outlier_quantile,
-                                                negative_range=negative_range,
+                                                negative_range=None,
                                                 )
         else:
             self.decision = decision_lib.WhitnesDensityClassifier(
                                                 cluster_algorithm=cluster_engine,
                                                 whitening_transformer=whitening_engine,
                                                 outlier_quantile=outlier_quantile,
-                                                negative_range=negative_range,
+                                                max_positive=max_positives,
+                                                negative_theshold=threshold,
+                                                negative_range=None,
                                                 verbose=True,
                                                 )
 
-        self.decision.read_data(np_data,np_neg,negative_range)
+        self.decision.read_data(np_data,None,None)
     
     def compute(self, axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame):
         
@@ -220,7 +273,7 @@ class TkinterSession():
         
         self.decision.eps = self.settings_vars["eps"].get()
         if self.settings_vars["algorithm"].get() == "Hierarchy":
-            self.decision.eps = 0.5
+            self.decision.eps = None
 
         self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
         
@@ -240,6 +293,8 @@ class TkinterSession():
         
     def export(self, axis_frame : ScrollableInputFrame, select_frame : ScrollablePlotSelectFrame):
 
+        chamber_map = self.check_chambers(chamber_file=self.chamber_file)
+        
         if self.decision is None:
             self.compute_clusters()
             self.settings_vars["num_plot_points"].set(10000)
@@ -254,7 +309,7 @@ class TkinterSession():
 
         df_list = []
         df_data_points = pd.DataFrame(data=self.decision.X, columns=self.decision.prediction_axis) 
-        df_predictions = pd.DataFrame(data=self.decision.predictions_df, columns=self.decision.prediction_axis) 
+        df_data_points_chan = pd.DataFrame(data=self.decision.X, columns=self.file_data.columns) 
         df_probabilities = pd.DataFrame(data=self.decision.probabilities_df, columns=self.decision.prediction_axis) 
         for file in self.files:
             file_path = Path(file)
@@ -263,12 +318,25 @@ class TkinterSession():
             df_temp = stats_lib.compute_results(self.decision.probabilities_df.iloc[mask,:],
                                                      self.threshold,
                                                      df_data_points.iloc[mask,:])
-            df_temp.loc[:,"Chamber"] = [test_name]
+            if chamber_map is None:
+                df_temp.insert(0, "Chamber", [test_name])
+            else:
+                def ins(col):
+                    index = chamber_map[file]
+                    val = self.chamber_file.loc[index, col]
+                    df_temp.insert(0, col, val)
+                ins("PoolingID")
+                ins("ChamberContext")
+                ins("SampleName")
+                ins("ChamberID")
+                ins("ChamberName")
             df_list.append(df_temp)
             
             # ouput results
-            file_path = Path(output_dir, f"{file_path.stem}_labelled.csv")
-            df_output = pd.concat([ df_data_points.iloc[mask,:], df_predictions.iloc[mask,:]],axis=1)
+            file_path = Path(output_dir, f"labelled_data.csv")
+            ic(df_probabilities.dtypes)
+            df_output = pd.concat([ df_data_points_chan.iloc[mask,:], df_probabilities.iloc[mask,:].astype("Float32")],axis=1, join="outer")
+            ic(df_output.dtypes)
             df_output.to_csv(file_path)
             
         # compute plots
@@ -280,8 +348,6 @@ class TkinterSession():
             
 
         df_results = pd.concat(df_list)
-        chamber = df_results.pop('Chamber')
-        df_results.insert(0, 'Chamber', chamber)
         df_results.to_csv(result_path, index=False)
         
     

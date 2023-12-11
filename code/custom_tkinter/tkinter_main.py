@@ -13,6 +13,8 @@ from pathlib import Path
 import pandas as pd
 import time
 
+
+
 class ctkApp:
         
     def __init__(self):
@@ -168,7 +170,7 @@ class ctkApp:
         rowcnt = rowcnt+1
         self.algo_switch_event()  # positioning is done in here
 
-        self.plot_title = ctk.CTkLabel(self.control_frame, text="Plot setup",
+        self.plot_title = ctk.CTkLabel(self.control_frame, text="Plot Setup",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
@@ -228,6 +230,36 @@ class ctkApp:
                                font=self.font,
                                command=self.compute)
         self.compute_button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        title = ctk.CTkLabel(self.control_frame, text="Export Setup",
+                             justify='center',
+                             font=self.titlefont,
+                             anchor="center")
+        title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        self.chamber_button = ctk.CTkButton(master = self.control_frame,
+                               text="Select Chamber details for export",
+                               font=self.font,
+                               height=button_height,
+                               command=self.select_chamber)
+        self.chamber_button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        button = ctk.CTkButton(master = self.control_frame,
+                               text="Export directory",
+                               height=button_height,
+                               font=self.font,
+                               command=self.choose_output_dir)
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
+        rowcnt = rowcnt+1
+
+        label = ctk.CTkLabel(self.control_frame, textvariable=self.session.settings_vars["output_path"],
+                             justify='center',
+                             font=self.font,
+                             anchor="center")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,0), sticky="news")
         rowcnt = rowcnt+1
 
         self.compute_button = ctk.CTkButton(master = self.control_frame,
@@ -320,7 +352,7 @@ class ctkApp:
         self.outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.1, number_of_steps=500, variable=self.session.settings_vars["outliers"])
+        self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.1, number_of_steps=5, variable=self.session.settings_vars["outliers"])
         self.outliers_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         self.outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
@@ -330,30 +362,11 @@ class ctkApp:
         self.outliers_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        tmp_label = ctk.CTkLabel(self.settings_frame, wraplength=600, text="Negative threshhold (points which are below that number times "
-                                 + "the max of the zero cluster in all dimensions are ignored.)",
-                             justify='center',
-                             font=self.font,
-                             anchor="center")
-        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-        tmp_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=1, number_of_steps=500, variable=self.session.settings_vars["neg_ignore"])
-        tmp_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
-        tmp_display = ctk.CTkEntry(master=self.settings_frame,
-                                font=self.font,
-                                textvariable=self.session.settings_vars["neg_ignore"],
-                                    justify='center',
-                            )
-        tmp_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-
         tmp_title = ctk.CTkLabel(self.settings_frame, text="Negative control detection",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
-        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
         tmp_textbox = ctk.CTkTextbox(self.settings_frame,
@@ -362,90 +375,59 @@ class ctkApp:
                              )
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.insert(0.0,text="""
-                            This works under the assumption that points are normally distributed
-                            in dimension in which all are negative and not normally distributed in dimensions,
-                            where all some positive.
-                            
-                            Under this assumption we make a normaltest
-                            https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.normaltest.html
-                            
-                            According to experiments performed on each chamber on the given data available for coding,
-                            we found that dimensions in which we found only a negative cluster the test statistic takes
-                            in average and a standard deviation (over all samples and dimensions
-                            in which a dimension only contains a negative cluster) of
-                            mean: 1.54
-                            std: 1.26
-                            As opposed to samples and dimensions in which there exist positive droples:
-                            mean: 0.077
-                            std: 0.088
-                            On negative contols we even have
-                            mean: 0.036
-                            std: 0.034
-                            
-                            By this clear distinction, it is reasonable to distinguish based on this statistic.
-                            We consider samples (dimension in one sample) to have a probability of 0.99
-                            that they correspond to the given class (all negative, some positive).
-                            Then we further assume that in the middle of the two means we have a
-                            probability of 0.5. Using this, we then fit a sigmoid and return the result
-                            for a new cluster.
+                            We ignore the `maximal possible positive points` many 
                             """
                            )
         rowcnt = rowcnt+1
 
-        tmp_label = ctk.CTkLabel(self.settings_frame, text="max contamination (the maximal point of points to be positive in any dimension `not that this is unrealisitc`).",
+        label = ctk.CTkLabel(self.settings_frame, text="Threshold for negative dimensions (if on one dimension all points execept 'max_positives' are below, dimension is considered negative).",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        tmp_label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        self.nc_outliers = ctk.CTkLabel(self.settings_frame, text="What is the amount of outliers not to be considered in the negative control detection",
-                             justify='center',
-                             font=self.font,
-                             anchor="center")
-        self.nc_outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-        self.nc_outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.01, number_of_steps=500, variable=self.session.settings_vars["nc_outliers"])
-        self.nc_outliers_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
-        self.nc_outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
+        slider = ctk.CTkSlider(master=self.settings_frame, from_=1, to=50000, number_of_steps=500, variable=self.session.settings_vars["neg_threshold"])
+        slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
+        slider = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
-                                textvariable=self.session.settings_vars["nc_outliers"],
+                                textvariable=self.session.settings_vars["neg_threshold"],
                                     justify='center',
                             )
-        self.nc_outliers_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
+        slider.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        tmp_title = ctk.CTkLabel(self.settings_frame, text="Export Settings",
-                             justify='center',
-                             font=self.titlefont,
-                             anchor="center")
-        tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
-
-        
-        rowcnt = rowcnt+1
-        button = ctk.CTkButton(master = self.settings_frame,
-                               text="Export directory (exported results will be stored there)",
-                               height=button_height,
-                               font=self.font,
-                               command=self.choose_output_dir)
-        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news")
-        rowcnt = rowcnt+1
-
-        label = ctk.CTkLabel(self.settings_frame, textvariable=self.session.settings_vars["output_path"],
+        label = ctk.CTkLabel(self.settings_frame, text="Maximal possible positive points for a dimension to be condidered negative.",
                              justify='center',
                              font=self.font,
                              anchor="center")
-        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.pad_y_inter,0), sticky="news")
+        label.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        button = ctk.CTkButton(master = self.settings_frame,
-                               text="Save as default",
-                               height=button_height,
-                               font=self.font,
-                               command=self.save_default)
-        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad + 20,0), sticky="news")
+        slider = ctk.CTkSlider(master=self.settings_frame, from_=1, to=10, number_of_steps=11, variable=self.session.settings_vars["negatives_max_positives"])
+        slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
+        slider = ctk.CTkEntry(master=self.settings_frame,
+                                font=self.font,
+                                textvariable=self.session.settings_vars["negatives_max_positives"],
+                                    justify='center',
+                            )
+        slider.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
+
+        #tmp_title = ctk.CTkLabel(self.settings_frame, text="Export Settings",
+        #                     justify='center',
+        #                     font=self.titlefont,
+        #                     anchor="center")
+        #tmp_title.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
+        #rowcnt = rowcnt+1
+
+        #button = ctk.CTkButton(master = self.settings_frame,
+                               #text="Save as default",
+                               #height=button_height,
+                               #font=self.font,
+                               #command=self.save_default)
+        #button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad + 20,0), sticky="news")
+        #rowcnt = rowcnt+1
         
         
         #########################
@@ -496,21 +478,34 @@ class ctkApp:
     def destroy_root(self):
         self.root.quit()
         
+    def select_chamber(self):
+        try:
+            # take parents to match expected file structure
+            temp_path = Path(self.session.settings_vars["input_path"].get()).parent.parent.absolute()
+            paths = fd.askopenfile(parent=self.root, filetypes=[("csv files", "*.csv")], title="Choose chamber details file", initialdir=str(temp_path))
+            self.session.get_chamber_file(paths)
+            self.chamber_button.configure(require_redraw=True, fg_color="green")
+        except Exception as e:
+            msg(title="Error", message=str(e), icon="cancel")
+
     def select_files(self):
         try:
-            paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Choose files to be processed", initialdir="/home/nico/csem/lab/Data/6P-positive-dilution-series-1-unlabelled/droplet-level-data/RawData")
+            temp_path = Path(self.session.settings_vars["input_path"].get()).parent.parent.parent.absolute()
+            paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Choose files to be processed", initialdir=str(temp_path))
             self.session.get_files(paths, axis_frame=self.axis_name_frame, select_frame=self.plot_selection)
             self.files_button.configure(require_redraw=True, fg_color="green")
             if self.session.neg_data is None:
                 self.neg_button.configure(require_redraw=True, fg_color=self.orig_button_color)
             if self.session.decision is None:
                 self.cluster_buttton.configure(require_redraw=True, fg_color=self.orig_button_color)
+            if self.session.chamber_file is None:
+                self.chamber_button.configure(require_redraw=True, fg_color=self.orig_button_color)
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
 
     def choose_output_dir(self):
         try:
-            out_dir = fd.askdirectory(parent=self.root, title="Output directory", initialdir=Path.home())
+            out_dir = fd.askdirectory(parent=self.root, title="Output directory", initialdir=self.session.settings_vars["output_path"].get())
             self.session.settings_vars["output_path"].set(out_dir)
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
@@ -526,7 +521,8 @@ class ctkApp:
 
     def select_neg(self):
         try:
-            paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Select Negative Controls", initialdir="/home/nico/csem/lab/Data/6P-positive-dilution-series-1-unlabelled/droplet-level-data/RawData")
+            temp_path = Path(self.session.settings_vars["input_path"].get()).absolute()
+            paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Select Negative Controls", initialdir=str(temp_path))
             self.session.get_negs(paths)
             self.neg_button.configure(require_redraw=True, fg_color="green")
             if self.session.decision is None:
@@ -559,15 +555,16 @@ class ctkApp:
     def export(self):
         #try:
             self.session.export(self.axis_name_frame, self.plot_selection)
-            self.session.store_settings(axis=True, settings=False, key="eps")
-            self.session.store_settings(axis=True, settings=False, key="algorithm")
+            self.session.store_settings()
             msg(title="Export", message="Successful export.", icon="check")
         #except Exception as e:
+        #    self.session.chamber_file = None
+        #    self.chamber_button.configure(require_redraw=True, fg_color=self.orig_button_color)
         #    msg(title="Error", message=str(e), icon="cancel")
         
     def save_default(self):
         try:
-            self.session.store_settings(axis=False)
+            self.session.store_settings()
             msg(title="Export", message="Successfully saved settings as default.", icon="check")
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
@@ -581,7 +578,6 @@ class ctkApp:
         table.grid(row=1, column=0, padx=(5,5), pady=(5,5), sticky="nswe")
 
     def draw_figure(self, fig):
-
         canvas = FigureCanvasTkAgg(fig,master=self.plot_frame)
         canvas.get_tk_widget().place(relx=0, rely=0, relheight=1,relwidth=1)
         canvas.draw()
