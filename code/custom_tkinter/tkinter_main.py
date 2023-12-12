@@ -20,6 +20,8 @@ class ctkApp:
     def __init__(self):
 
         ctk.set_appearance_mode("system")
+        ctk.set_widget_scaling(0.8) # fix windows
+        ctk.set_widget_scaling(1.0)
         self.root = ctk.CTk()
         self.root.geometry("1200x800+200x200")
         self.root.title("PCR Contamination")
@@ -42,7 +44,7 @@ class ctkApp:
 
         self.tab_plots = self.tab_view.add("Experiments")
         self.tab_plots.grid_columnconfigure(0,minsize=400,weight=1,uniform=1)
-        self.tab_plots.grid_columnconfigure(1,weight=10,uniform=1)
+        self.tab_plots.grid_columnconfigure(1,weight=3,uniform=1)
         self.tab_plots.grid_rowconfigure(0,weight=10)
         self.tab_plots.grid_rowconfigure(1,weight=2)
 
