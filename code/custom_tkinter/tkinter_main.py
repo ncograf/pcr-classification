@@ -20,7 +20,7 @@ class ctkApp:
     def __init__(self):
 
         ctk.set_appearance_mode("system")
-        ctk.set_widget_scaling(0.8) # fix windows
+        ctk.set_widget_scaling(0.7) # fix windows
         ctk.set_widget_scaling(1.0)
         self.root = ctk.CTk()
         self.root.geometry("1200x800+200x200")
