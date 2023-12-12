@@ -320,6 +320,7 @@ class TkinterSession():
                                                      df_data_points.iloc[mask,:])
             if chamber_map is None:
                 df_temp.insert(0, "Chamber", [test_name])
+                data_name = test_name
             else:
                 def ins(col):
                     index = chamber_map[file]
@@ -330,13 +331,12 @@ class TkinterSession():
                 ins("SampleName")
                 ins("ChamberID")
                 ins("ChamberName")
+                data_name = self.chamber_file.loc[chamber_map[file], "ChamberID"]
             df_list.append(df_temp)
             
             # ouput results
-            file_path = Path(output_dir, f"labelled_data.csv")
-            ic(df_probabilities.dtypes)
+            file_path = Path(output_dir, f"{data_name}_labelled.csv")
             df_output = pd.concat([ df_data_points_chan.iloc[mask,:], df_probabilities.iloc[mask,:].astype("Float32")],axis=1, join="outer")
-            ic(df_output.dtypes)
             df_output.to_csv(file_path)
             
         # compute plots

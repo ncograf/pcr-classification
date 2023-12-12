@@ -541,7 +541,7 @@ class ctkApp:
             msg(title="Error", message=str(e), icon="cancel")
 
     def compute(self):
-        #try:
+        try:
             fig, df_results = self.session.compute(self.axis_name_frame, self.plot_selection)
             self.cluster_buttton.configure(require_redraw=True, fg_color="green")
             self.plot_point_slider._to = self.session.decision.X_transformed.shape[0]
@@ -549,18 +549,18 @@ class ctkApp:
             self.session.store_settings(axis=True, settings=False, key="algorithm")
             self.draw_results(df_results)
             self.draw_figure(fig)
-        #except Exception as e:
-        #    msg(title="Error", message=str(e), icon="cancel")
+        except Exception as e:
+            msg(title="Error", message=str(e), icon="cancel")
 
     def export(self):
-        #try:
+        try:
             self.session.export(self.axis_name_frame, self.plot_selection)
             self.session.store_settings()
             msg(title="Export", message="Successful export.", icon="check")
-        #except Exception as e:
-        #    self.session.chamber_file = None
-        #    self.chamber_button.configure(require_redraw=True, fg_color=self.orig_button_color)
-        #    msg(title="Error", message=str(e), icon="cancel")
+        except Exception as e:
+            self.session.chamber_file = None
+            self.chamber_button.configure(require_redraw=True, fg_color=self.orig_button_color)
+            msg(title="Error", message=str(e), icon="cancel")
         
     def save_default(self):
         try:
