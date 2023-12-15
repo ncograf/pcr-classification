@@ -203,7 +203,7 @@ class TkinterSession():
             index = self.file_data.columns.get_loc(axis)
             label_list[index] = label
         
-        return label_list
+        return label_list, axis_labels
 
     def get_plot_selections(self, axis_frames : ScrollablePlotSelectFrame, axis_labels : List[str]):
         if self.file_data is None:
@@ -242,8 +242,23 @@ class TkinterSession():
         cluster_engine = cluster.KMeans(n_clusters=num_cluster, n_init='auto')
         
         outlier_quantile = self.settings_vars["outliers"].get()
+        if outlier_quantile <= 0:
+            outlier_quantile = 1e-15
+            self.settings_vars["outliers"].set(outlier_quantile)
+        elif outlier_quantile > 0.5:
+            outlier_quantile = 0.5
+            self.settings_vars["outliers"].set(outlier_quantile)
+            
+            
         max_positives = self.settings_vars["negatives_max_positives"].get()
+        if max_positives < 0:
+            max_positives = 0
+            self.settings_vars["negatives_max_positives"].set(max_positives)
+        
         threshold = self.settings_vars["neg_threshold"].get()
+        if threshold < 0:
+            threshold = 0
+            self.settings_vars["neg_threshold"].set(threshold)
 
         if self.settings_vars["algorithm"].get() == "Hierarchy":
             self.decision = decision_lib.ClusterRelativeHierarchyMeanClassifier(
@@ -275,7 +290,7 @@ class TkinterSession():
         if self.settings_vars["algorithm"].get() == "Hierarchy":
             self.decision.eps = None
 
-        self.decision.prediction_axis = self.get_channel_names(axis_frame=axis_frame)
+        self.decision.prediction_axis, self.axis_labels = self.get_channel_names(axis_frame=axis_frame)
         
         self.decision.predict_all()
         df_data_points = pd.DataFrame(data=self.decision.X, columns=self.decision.prediction_axis) 
@@ -335,14 +350,14 @@ class TkinterSession():
             df_list.append(df_temp)
             
             # ouput results
-            file_path = Path(output_dir, f"{data_name}_labelled.csv")
+            file_path = Path(output_dir, f"{data_name.strip()}_labelled.csv")
             df_output = pd.concat([ df_data_points_chan.iloc[mask,:], df_probabilities.iloc[mask,:].astype("Float32")],axis=1, join="outer")
             df_output.to_csv(file_path)
             
         # compute plots
         selected_pairs = self.get_plot_selections(axis_frames=select_frame, axis_labels=self.decision.prediction_axis)
         for (col_one, col_two) in selected_pairs:
-            plot_path = Path(output_dir, f"{col_one}_{col_two}.png")
+            plot_path = Path(output_dir, f"{col_one}_labels.png")
             plot_lib.plot_pair_bayesian_no_gt(df_data_points, df_probabilities, col_one, col_two, save_path=plot_path)
 
             

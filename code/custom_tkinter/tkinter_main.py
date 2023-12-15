@@ -227,7 +227,7 @@ class ctkApp:
         rowcnt = rowcnt+1
 
         self.compute_button = ctk.CTkButton(master = self.control_frame,
-                               text="Compute and Plot",
+                               text="Predict and Plot",
                                height=button_height,
                                font=self.font,
                                command=self.compute)
@@ -313,6 +313,9 @@ class ctkApp:
                             To restore default settings, just delete the folder $HOME/.pcr_conc. 
                             But note that this also resets the axis names to the default names. 
                             If you want to reset only the settings, delete the file $HOME/.pcr_conc/settings.csv.
+                            
+                            Changes in this page will only apply by recomputing the clusters, which
+                            can be achieved by pressing the `compute cluster` button.
                             """
                            )
         rowcnt = rowcnt+1
@@ -330,7 +333,7 @@ class ctkApp:
                              )
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.tag_config("center", justify="center")
-        tmp_textbox.insert(0.0,text=r"""
+        tmp_textbox.insert(0.0,text="""
                             Generally we work under the following assumptions:
                             1. Let D be the set of dimensions. If for a sample there exists points
                             which are positive in $S \subseteq D$. Then we assume that for every
@@ -354,7 +357,7 @@ class ctkApp:
         self.outliers.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0, to=0.1, number_of_steps=5, variable=self.session.settings_vars["outliers"])
+        self.outliers_slider = ctk.CTkSlider(master=self.settings_frame, from_=0.00001, to=0.5, number_of_steps=200, variable=self.session.settings_vars["outliers"])
         self.outliers_slider.grid(row=rowcnt, column=0, padx=(self.pad_x,0), pady=(self.button_pad,0), sticky="news")
         self.outliers_slider_display = ctk.CTkEntry(master=self.settings_frame,
                                 font=self.font,
@@ -377,12 +380,25 @@ class ctkApp:
                              )
         tmp_textbox.grid(row=rowcnt, column=0,columnspan=2, padx=(self.pad_x,self.pad_x), pady=(5,0), sticky="news")
         tmp_textbox.insert(0.0,text="""
-                            We ignore the `maximal possible positive points` many 
+                            The given negative control is checked for contamination. The selected negative contorl(s)
+                            do not have any impact on the computation of clusters or otherwise.
+                            
+                            However, during the comuputation, the algorithm checks (see below) for each channel,
+                            whether all the given droples have to be considered negative in the checked channel.
+                            This then obviously has an effect on the predictions.
+                            
+                            For a given set of droplets: S (all datapoints in the input data), a given channel: d
+                            and a maximal possible positives points: n,
+                            if all the droplets in S except for the maximal n points are below the threshold,
+                            then the algrithm consideres the points S to all to be negative in channel d.
+
+                            Moreover, the algorithm accepts a negative control N as a such if all the chnnels
+                            of N are cosidered negative according to the above criterion.
                             """
                            )
         rowcnt = rowcnt+1
 
-        label = ctk.CTkLabel(self.settings_frame, text="Threshold for negative dimensions (if on one dimension all points execept 'max_positives' are below, dimension is considered negative).",
+        label = ctk.CTkLabel(self.settings_frame, text="Threshold for negative channels (if on one channle all droplets execept 'max_positives' are below, then the channel is considered negative).",
                              justify='center',
                              font=self.font,
                              anchor="center")
@@ -399,7 +415,7 @@ class ctkApp:
         slider.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        label = ctk.CTkLabel(self.settings_frame, text="Maximal possible positive points for a dimension to be condidered negative.",
+        label = ctk.CTkLabel(self.settings_frame, text="Maximal possible positive droplets, (independently checked for each channel) for the channel to be considered negative.",
                              justify='center',
                              font=self.font,
                              anchor="center")

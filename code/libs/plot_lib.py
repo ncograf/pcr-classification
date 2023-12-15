@@ -390,10 +390,12 @@ def plot_pairwise_selection_bayesian_no_gt(
         y_features = data_points.loc[mask, col_two].to_numpy()
 
         if len(ax.shape) == 2:
+            ax[i // n_cols, i % n_cols].set_title(f"Labels for {col_one}")
             ax[i // n_cols, i % n_cols].set_xlabel(col_one)
             ax[i // n_cols, i % n_cols].set_ylabel(col_two)
             ax[i // n_cols, i % n_cols].scatter(x_features, y_features, c = color_labels)
         else:
+            ax[i].set_title(f"Labels for {col_one}")
             ax[i].set_xlabel(col_one)
             ax[i].set_ylabel(col_two)
             ax[i].scatter(x_features, y_features, c = color_labels)
@@ -446,6 +448,7 @@ def plot_pair_bayesian_no_gt(
     x_features = data_points.loc[mask, col_one].to_numpy()
     y_features = data_points.loc[mask, col_two].to_numpy()
 
+    ax.set_title(f"Labels for {col_one}")
     ax.set_xlabel(col_one)
     ax.set_ylabel(col_two)
     ax.scatter(x_features, y_features, c = color_labels)
