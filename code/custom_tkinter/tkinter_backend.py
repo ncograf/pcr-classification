@@ -136,10 +136,10 @@ class TkinterSession():
 
     def get_negs(self, file_list : List[str]) -> None:
         if self.file_data is None:
-            raise Exception("Experiment files must be selected before negative control.")
+            raise Exception("Experiment files must be selected before negative control can be checked.")
         neg_data, neg_masks = data_lib.load_raw_dataset(file_list)
         
-        # this will raise a key error when the columns do not match
+        # this will raise a key error when the columns do not match if not only the columns selected in the data file are checked
         neg_data = neg_data.loc[:, self.file_data.columns]
         
         max_positives = self.settings_vars["negatives_max_positives"].get()
@@ -148,12 +148,7 @@ class TkinterSession():
         neg_dims = get_negative_dimension_3(np.array(neg_data), max_positives=max_positives, threshold=neg_threshold)
 
         if np.any(~neg_dims):
-            raise NotNegError(f"File list {file_list} contains cluster which are contaminated!")
-
-        self.neg_data, self.neg_masks = neg_data, neg_masks
-        self.neg_files = file_list
-        
-        self.decision = None
+            raise NotNegError(f"Samples are contaminated!")
     
     def check_negs(self):
         # this will raise a key error when the columns do not match

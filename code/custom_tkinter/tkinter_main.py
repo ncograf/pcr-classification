@@ -97,19 +97,12 @@ class ctkApp:
         self.orig_button_color = self.files_button.cget("fg_color")
         rowcnt = rowcnt+1
 
-        self.neg_button = ctk.CTkButton(master = self.control_frame,
-                               text="Select Negative control",
+        button = ctk.CTkButton(master = self.control_frame,
+                               text="Check Negative control",
                                height=button_height,
                                font=self.font,
                                command=self.select_neg)
-        self.neg_button.grid(row=rowcnt,column=0,padx=(self.pad_x,self.pad_x_inter),pady=(self.button_pad,0), sticky="news" )
-
-        self.neg_button_cancel = ctk.CTkButton(master = self.control_frame,
-                               text="Unselect",
-                               height=button_height,
-                               font=self.font,
-                               command=self.cancel_neg)
-        self.neg_button_cancel.grid(row=rowcnt,column=1,padx=(self.pad_x_inter,self.pad_x),pady=(self.button_pad,0), stick="news")
+        button.grid(row=rowcnt,column=0, columnspan=2,padx=(self.pad_x,self.pad_x),pady=(self.button_pad,0), sticky="news" )
         rowcnt = rowcnt+1
 
         self.cluster_buttton = ctk.CTkButton(master = self.control_frame,
@@ -512,8 +505,6 @@ class ctkApp:
             paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Choose files to be processed", initialdir=str(temp_path))
             self.session.get_files(paths, axis_frame=self.axis_name_frame, select_frame=self.plot_selection)
             self.files_button.configure(require_redraw=True, fg_color="green")
-            if self.session.neg_data is None:
-                self.neg_button.configure(require_redraw=True, fg_color=self.orig_button_color)
             if self.session.decision is None:
                 self.cluster_buttton.configure(require_redraw=True, fg_color=self.orig_button_color)
             if self.session.chamber_file is None:
@@ -542,19 +533,9 @@ class ctkApp:
             temp_path = Path(self.session.settings_vars["input_path"].get()).absolute()
             paths = fd.askopenfilenames(parent=self.root, filetypes=[("csv files", "*.csv")], title="Select Negative Controls", initialdir=str(temp_path))
             self.session.get_negs(paths)
-            self.neg_button.configure(require_redraw=True, fg_color="green")
             if self.session.decision is None:
                 self.cluster_buttton.configure(require_redraw=True, fg_color=self.orig_button_color)
             msg(title="Valid", message="Valid negative control.", icon="check")
-        except Exception as e:
-            msg(title="Error", message=str(e), icon="cancel")
-
-    def cancel_neg(self):
-        try:
-            self.session.drop_negs()
-            self.neg_button.configure(require_redraw=True, fg_color=self.orig_button_color)
-            if self.session.decision is None:
-                self.cluster_buttton.configure(require_redraw=True, fg_color=self.orig_button_color)
         except Exception as e:
             msg(title="Error", message=str(e), icon="cancel")
 
