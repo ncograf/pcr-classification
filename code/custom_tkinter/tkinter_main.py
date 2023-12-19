@@ -360,7 +360,7 @@ class ctkApp:
         self.outliers_slider_display.grid(row=rowcnt, column=1, padx=(self.pad_x_inter,self.pad_x), pady=(self.button_pad,0), sticky="news")
         rowcnt = rowcnt+1
 
-        tmp_title = ctk.CTkLabel(self.settings_frame, text="Negative control detection",
+        tmp_title = ctk.CTkLabel(self.settings_frame, text="Negative axis / control detection",
                              justify='center',
                              font=self.titlefont,
                              anchor="center")
