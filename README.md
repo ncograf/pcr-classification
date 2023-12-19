@@ -4,6 +4,14 @@ a copy of the Data folder available at [Data Shared by Miss McLeod](https://driv
 Note that this only matters for the default paths in the libraries, if you specify the corresponding
 paths by yourself, you can place the files wherever you like.
 
+## Setup
+We tracked packages and versions with [Poetry](https://python-poetry.org/). Provided, you installed a python version
+3.11 or higher (although only tested for 3.11) the setup should work with the normal poetry commands on windows and linux alike.
+Manual setup by hand is not recommended, as the libraries might not be found.
+
+## GUI
+A Linux and Windows version of the GUI can be downloaded at [polybox](https://polybox.ethz.ch/index.php/s/d134Fz2yycKbjqL).
+
 ## code
 All of the code is in the `code` folder. 
 The folder itself, contains a few jupyter notebooks, which document early experiments.
