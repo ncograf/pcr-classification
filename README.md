@@ -1,6 +1,6 @@
 # DataScienceLab
 The folder Data is not tracked by Git and should contain
-a copy of the Data folder available at [Data Shared by Miss McLeod](https://drive.switch.ch/index.php/s/Dk9O9BXu0drKvqU).
+a copy of the Data folder available at Data Shared by Miss McLeod.
 Note that this only matters for the default paths in the libraries, if you specify the corresponding
 paths by yourself, you can place the files wherever you like.
 
@@ -12,7 +12,7 @@ Manual setup by hand is not recommended, as the libraries might not be found.
 ## GUI
 A Linux and Windows version of the GUI can be downloaded at [polybox](https://polybox.ethz.ch/index.php/s/d134Fz2yycKbjqL).
 
-## code
+## Code
 All of the code is in the `code` folder. 
 The folder itself, contains a few jupyter notebooks, which document early experiments.
 More detailed experiments were later moved to the corresponding folders:
@@ -23,7 +23,7 @@ More detailed experiments were later moved to the corresponding folders:
 - `zero_cluster_detection` this folder contains experment files for the negative axis / control detection
 - `libs` contains all the code which acutally does some computations. See below.
 
-### libs
+### Libs
 - `decision_lib` contains all the different algorithm we implemented and tested for point labelling. (The only ones which are use in the final version of the GUI are `cluster_relative_mean_classifier.py` and `whitnes_density_classifier.py` all others were sorted out due to worse performance or pore generalizabilty)
 - `data_lib.py` contains code to load and prepare data. This library heavily depends on the structure (hierarchy) of the files and folders in the `Data` folder.
 - `negative_dimension_detection.py` Code for detecting negative clusters. (There are multiple algorithms of which only one was used in the GUI)
@@ -32,7 +32,7 @@ More detailed experiments were later moved to the corresponding folders:
 - `transform_lib` basically only related to whitening / decorrelation (also contains the cluster class (every library has some bad desing choices))
 - `validation_lib` algorithms we used to compare our labels with the "true" labels provided by the challance givers.
 
-## misc
+## Misc
 Some of the results we exported to this folder but it's by far not complete due to a lack of self discipline.
 
 ## Data
